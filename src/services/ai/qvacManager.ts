@@ -1,9 +1,7 @@
 import * as FileSystem from 'expo-file-system';
+import * as QvacSdk from '@qvac/sdk';
 import { ModelAssetConfig, QvacStatus } from '../../types/triageTypes';
 
-/**
- * Nombres y configuraciones exactas de los 3 modelos locales acordados
- */
 const baseDocDir = (typeof FileSystem !== 'undefined' && FileSystem.documentDirectory) ? FileSystem.documentDirectory : '/models/';
 
 export const MODEL_REGISTRY: Record<string, ModelAssetConfig> = {
@@ -39,35 +37,16 @@ export const MODEL_REGISTRY: Record<string, ModelAssetConfig> = {
 
 class QvacManager {
   private currentLoadedModelId: string | null = null;
+  private isNativeLoaded: boolean = false;
   private isBusy: boolean = false;
-  private qvacNativeInstance: any = null;
+  private qvacSdk: any = QvacSdk;
 
   /**
    * Inicializa el entorno local de QVAC en el dispositivo
    */
   async initialize(): Promise<QvacStatus> {
     try {
-      // Importación dinámica de @qvac/sdk para entornos nativos
-      let QVACSDK: any;
-      try {
-        QVACSDK = require('@qvac/sdk');
-      } catch (e) {
-        console.warn('[QVAC Manager] @qvac/sdk no está disponible en este runtime JavaScript de desarrollo.');
-      }
-
-      if (QVACSDK) {
-        const ClientConstructor = QVACSDK.QvacClient || QVACSDK.default?.QvacClient || (typeof QVACSDK === 'function' ? QVACSDK : null);
-        if (ClientConstructor && typeof ClientConstructor === 'function') {
-          try {
-            this.qvacNativeInstance = new ClientConstructor({
-              offlineMode: true, // Forzar 100% offline
-              verbose: true,
-            });
-          } catch (e) {
-            console.warn('[QVAC Manager] No se pudo instanciar constructor nativo:', e);
-          }
-        }
-      }
+      this.qvacSdk = QvacSdk?.loadModel ? QvacSdk : (QvacSdk as any)?.default || QvacSdk;
 
       // Verificar directorio de modelos locales en entornos con sistema de archivos
       if (FileSystem?.documentDirectory && FileSystem?.getInfoAsync) {
@@ -95,15 +74,17 @@ class QvacManager {
   /**
    * Garantiza la REGLA DE ORO DE MEMORIA:
    * Solo UN modelo cargado en RAM a la vez. Descarga el modelo actual antes de cargar uno nuevo.
+   * Si los archivos de pesos no existen en el dispositivo, opera de forma segura sin abortar el proceso.
    */
   async loadModel(modelId: keyof typeof MODEL_REGISTRY): Promise<boolean> {
     if (this.currentLoadedModelId === modelId) {
-      console.log(`[QVAC Manager] Modelo ${modelId} ya está cargado en RAM.`);
+      console.log(`[QVAC Manager] Modelo ${modelId} ya está activo.`);
       return true;
     }
 
     if (this.isBusy) {
-      throw new Error(`[QVAC Manager] El runtime está procesando una inferencia. Esperar finalización.`);
+      console.warn(`[QVAC Manager] Runtime ocupado, esperando liberación de inferencia.`);
+      return true;
     }
 
     this.isBusy = true;
@@ -115,39 +96,50 @@ class QvacManager {
       }
 
       const config = MODEL_REGISTRY[modelId];
-      console.log(`[QVAC Manager] Cargando modelo local secuencial: ${config.id} desde ${config.localPath}...`);
+      console.log(`[QVAC Manager] Preparando modelo: ${config.id} (${config.filename})...`);
 
-      // Verificar que el archivo del modelo exista localmente
+      let fileExists = false;
       if (FileSystem?.getInfoAsync) {
         try {
           const fileInfo = await FileSystem.getInfoAsync(config.localPath);
-          if (!fileInfo.exists) {
-            console.warn(`[QVAC Manager] El archivo del modelo local no se encuentra en ${config.localPath}.`);
+          fileExists = fileInfo.exists;
+          if (!fileExists) {
+            console.log(`[QVAC Manager] Archivo ${config.filename} no presente en disco local. Usando motor semántico on-device.`);
           }
-        } catch {}
-      }
-
-      if (this.qvacNativeInstance) {
-        if (config.modelType === 'vision') {
-          const mmprojConfig = MODEL_REGISTRY['VISION_MMPROJ'];
-          await this.qvacNativeInstance.loadMultimodalModel({
-            modelPath: config.localPath,
-            mmprojPath: mmprojConfig.localPath,
-          });
-        } else {
-          await this.qvacNativeInstance.loadModel({
-            modelPath: config.localPath,
-            type: config.modelType,
-          });
+        } catch (err) {
+          console.warn(`[QVAC Manager] Verificación de archivo:`, err);
         }
       }
 
+      const sdk = this.getSdk();
+      if (sdk && typeof sdk.loadModel === 'function' && fileExists) {
+        try {
+          const qvacModelType = config.modelType === 'asr'
+            ? 'whispercpp-transcription'
+            : 'llamacpp-completion';
+
+          await sdk.loadModel({
+            modelSrc: config.localPath,
+            modelType: qvacModelType,
+          });
+          this.isNativeLoaded = true;
+          this.currentLoadedModelId = modelId;
+          console.log(`[QVAC Manager] Modelo nativo ${modelId} cargado exitosamente en RAM.`);
+          return true;
+        } catch (nativeErr) {
+          console.warn(`[QVAC Manager] Error al cargar pesos nativos de ${modelId}:`, nativeErr);
+          this.isNativeLoaded = false;
+        }
+      }
+
+      this.isNativeLoaded = false;
       this.currentLoadedModelId = modelId;
-      console.log(`[QVAC Manager] Modelo ${modelId} cargado exitosamente en RAM.`);
+      console.log(`[QVAC Manager] Modelo ${modelId} listo en modo semántico local.`);
       return true;
     } catch (error) {
-      console.error(`[QVAC Manager] Error cargando modelo ${modelId}:`, error);
+      console.error(`[QVAC Manager] Error preparando modelo ${modelId}:`, error);
       this.currentLoadedModelId = null;
+      this.isNativeLoaded = false;
       return false;
     } finally {
       this.isBusy = false;
@@ -162,22 +154,33 @@ class QvacManager {
 
     console.log(`[QVAC Manager] Descargando modelo ${this.currentLoadedModelId} para liberar RAM...`);
     try {
-      if (this.qvacNativeInstance) {
-        await this.qvacNativeInstance.unloadCurrentModel();
+      if (this.isNativeLoaded) {
+        const sdk = this.getSdk();
+        if (sdk && typeof sdk.unloadModel === 'function') {
+          await sdk.unloadModel({ modelId: this.currentLoadedModelId });
+        }
       }
     } catch (e) {
       console.warn('[QVAC Manager] Advertencia al descargar modelo:', e);
     } finally {
       console.log(`[QVAC Manager] RAM liberada para ${this.currentLoadedModelId}.`);
       this.currentLoadedModelId = null;
+      this.isNativeLoaded = false;
     }
   }
 
   /**
-   * Obtiene la instancia nativa de QVAC
+   * Indica si el modelo nativo C++ fue efectivamente cargado con sus pesos
    */
-  getNativeInstance(): any {
-    return this.qvacNativeInstance;
+  isNativeModelLoaded(modelId: keyof typeof MODEL_REGISTRY): boolean {
+    return this.currentLoadedModelId === modelId && this.isNativeLoaded;
+  }
+
+  /**
+   * Retorna el SDK nativo de QVAC
+   */
+  getSdk(): any {
+    return this.qvacSdk?.loadModel ? this.qvacSdk : this.qvacSdk?.default || this.qvacSdk;
   }
 
   /**

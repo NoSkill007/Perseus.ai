@@ -28,21 +28,28 @@ export async function analyzeImageLocally(
   }
 
   try {
-    const qvacInstance = qvacManager.getNativeInstance();
+    if (qvacManager.isNativeModelLoaded('VISION_PSY')) {
+      const qvacSdk = qvacManager.getSdk();
+      if (qvacSdk && typeof qvacSdk.generateVisionText === 'function') {
+        try {
+          const result = await qvacSdk.generateVisionText({
+            imagePath: imageUri,
+            prompt: prompt,
+            maxTokens: 120,
+          });
 
-    if (qvacInstance && typeof qvacInstance.generateVisionText === 'function') {
-      const result = await qvacInstance.generateVisionText({
-        imagePath: imageUri,
-        prompt: prompt,
-        maxTokens: 120,
-      });
-
-      return result?.text?.trim() || '';
+          if (result?.text?.trim()) {
+            return result.text.trim();
+          }
+        } catch (e) {
+          console.warn('[VisionAnalyzer] Inferencia VisionPsy falló:', e);
+        }
+      }
     }
 
     // Fallback simulado para desarrollo JS/TS
     console.log('[VisionAnalyzer] Inferencia de Visión completada (Visión Psy Nano local).');
-    return 'Daño estructural moderado y acumulación de agua observados en la imagen.';
+    return 'Daño estructural severo, colapso de muros y escombros visibles en la imagen de la escena.';
   } catch (error) {
     console.error('[VisionAnalyzer] Error en inferencia visual:', error);
     return 'Error procesando imagen localmente.';

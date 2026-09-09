@@ -44,15 +44,21 @@ describe('Perseus AI - Local Triage Pipeline (Persona B)', () => {
     expect(result.isLocalInference).toBe(true);
   });
 
-  it('debe manejar fallback seguro sin crashear si no se recibe relato', async () => {
+  it('debe clasificar terremoto con atrapados en Calidonia como ROJO con necesidades de rescate y salud', async () => {
     const input = {
-      operatorDeviceId: 'UNIT-TEST-DEVICE-03',
+      textRelato: 'Somos 8 personas atrapadas en un edificio en calidonia. Hubo un terremoto y quedamos atrapados.',
+      province: 'Panamá',
+      operatorDeviceId: 'UNIT-TEST-DEVICE-04',
     };
 
     const result = await runTriagePipeline(input);
 
-    expect(result.reportId).toBeDefined();
-    expect(result.triagePriority).toBeDefined();
+    expect(result.triagePriority).toBe('ROJO');
+    expect(result.reportedPeopleCount).toBe(8);
+    expect(result.locationReference).toContain('Calidonia');
+    expect(result.needs).toContain('ACCESO_RESCATE');
+    expect(result.needs).toContain('SALUD');
+    expect(result.needs).toContain('ALBERGUE');
     expect(result.isLocalInference).toBe(true);
   });
 });

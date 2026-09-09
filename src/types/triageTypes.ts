@@ -73,3 +73,87 @@ export interface QvacStatus {
   deviceSupported: boolean;
   availableMemoryMB?: number;
 }
+
+// =============================================
+// Tipos de la App (Persona A)
+// =============================================
+
+export type AppRole = 'ciudadano' | 'rescatista';
+
+export type ReportStatus =
+  | 'borrador'
+  | 'confirmado'
+  | 'enviado'
+  | 'recibido'
+  | 'en_atencion'
+  | 'completado';
+
+export type Sex = 'M' | 'F' | 'Otro';
+
+export type BloodType = 'A+' | 'A-' | 'B+' | 'B-' | 'AB+' | 'AB-' | 'O+' | 'O-';
+
+export interface UserProfile {
+  id?: number;
+  fullName: string;
+  age: number;
+  sex: Sex;
+  phone: string;
+  address?: string;
+  province: string;
+  bloodType?: BloodType;
+  hasDisability: boolean;
+  disabilityDescription?: string;
+  medicalConditions?: string;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
+  role: AppRole;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type ReportSource = 'local' | 'received';
+
+export interface ReportRecord {
+  reportId: string;
+  createdAt: number;
+  source: ReportSource;
+  status: ReportStatus;
+
+  // Datos de TriageResult
+  transcript?: string;
+  visionSeverity?: string;
+  extractedSummary: string;
+  triagePriority: StartPriority;
+  needs: DisasterNeedCategory[];
+  reportedPeopleCount?: number;
+  locationReference?: string;
+  missingFields: string[];
+  rawModelOutput?: string;
+  isLocalInference: boolean;
+  executionTimeMs: number;
+
+  // Ubicación manual
+  province?: string;
+  district?: string;
+  corregimiento?: string;
+
+  // Perfil del reportante (para reportes recibidos via P2P)
+  reporterProfile?: UserProfile;
+
+  // Sincronización
+  syncEventId?: string;
+  sentAt?: number;
+  receivedAt?: number;
+  ackReceived: boolean;
+
+  updatedAt: number;
+}
+
+export interface SyncEvent {
+  eventId: string;
+  reportId: string;
+  direction: 'sent' | 'received';
+  peerIp?: string;
+  timestamp: number;
+  ackReceived: boolean;
+}

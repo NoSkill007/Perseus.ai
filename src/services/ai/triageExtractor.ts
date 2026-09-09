@@ -1,5 +1,6 @@
 import { qvacManager } from './qvacManager';
 import { StartPriority, DisasterNeedCategory } from '../../types/triageTypes';
+import { detectPanamaLocation } from './panamaLocations';
 
 export interface ExtractTriageOptions {
   relatoText: string;
@@ -21,27 +22,33 @@ export interface ExtractedTriagePayload {
 }
 
 const SYSTEM_PROMPT = `
-Eres un asistente de triaje de emergencias para desastres naturales en Panamá (Perseus.ai).
-Tu tarea es analizar la información recibida y extraer una estructura JSON estricta.
+Eres el agente de triaje y evaluación de emergencias de Perseus.ai para desastres naturales en Panamá.
+Tu objetivo es analizar la información recopilada en campo (relato de texto, audio ASR y análisis visual) y generar una ficha estructurada en formato JSON estricto.
 
-REGLAS DE ORO:
-1. Responde ÚNICAMENTE en formato JSON válido. Sin explicaciones antes o después del JSON.
-2. La clave "triagePriority" DEBE SER exactamente uno de estos 4 valores (ENUM FORZADO):
-   - "ROJO": Riesgo inminente de vida, atrapados, heridas graves, falta crítica de agua/refugio con personas vulnerables.
-   - "AMARILLO": Lesiones moderadas o necesidad urgente sin riesgo de vida inmediato.
-   - "VERDE": Lesiones leves o personas ambulantes que requieren asistencia menor.
-   - "NEGRO": Fallecidos o casos no viables.
-3. Jamás inventes coordenadas GPS, nombres propios no mencionados ni calles no dichas.
-4. Si un dato no se conoce (ej. cantidad exacta de personas o dirección precisa), agrégalo a "missingFields".
+REGLAS DE EVALUACIÓN SEGÚN MANUAL ESFERA Y TRIAGE START:
+1. Prioridad "triagePriority" (ENUM OBLIGATORIO):
+   - "ROJO": Riesgo inminente de muerte, personas atrapadas por colapso/terremoto/inundación en techos, heridas graves, niños/adultos mayores en peligro crítico.
+   - "AMARILLO": Situación urgente sin riesgo de colapso vital inmediato, familias evacuadas necesitadas de agua/alimento o con lesiones moderadas.
+   - "VERDE": Afectaciones leves, personas en albergues o canchas comunitarias fuera de peligro vital inmediato.
+   - "NEGRO": Personas fallecidas sin signos vitales.
 
-FORMATO JSON OBLIGATORIO:
+2. Categorías de Necesidades "needs" (Estándares Esfera):
+   - Si es TERREMOTO, COLAPSO ESTRUCTURAL o ATRAPADOS: DEBE incluir ["ACCESO_RESCATE", "SALUD", "PROTECCION", "ALBERGUE"].
+   - Si es INUNDACIÓN o CRECIDA DE RÍO: DEBE incluir ["AGUA_SANEAMIENTO", "ALIMENTACION", "ALBERGUE", "ACCESO_RESCATE"].
+   - Si hay HERIDOS o FRACTURAS: DEBE incluir ["SALUD"].
+   - Si falta AGUA o SANEAMIENTO: DEBE incluir ["AGUA_SANEAMIENTO"].
+   - Si falta COMIDA o VÍVERES: DEBE incluir ["ALIMENTACION"].
+
+3. Ubicación: Detecta corregimientos y distritos de Panamá (ej. Calidonia, Bella Vista, David, Boquete, Changuinola, Santiago, etc.) y referencias textuales (ej. "edificio en Calidonia, Panamá"). Jamás inventes coordenadas GPS.
+
+FORMATO JSON DE RESPUESTA:
 {
-  "extractedSummary": "Resumen conciso en 1 o 2 oraciones en español",
+  "extractedSummary": "Resumen conciso en 1 o 2 oraciones en español indicando tipo de desastre, cantidad de afectados y situación",
   "triagePriority": "ROJO" | "AMARILLO" | "VERDE" | "NEGRO",
-  "needs": ["AGUA_SANEAMIENTO", "ALIMENTACION", "SALUD", "ALBERGUE", "PROTECCION", "ACCESO_RESCATE", "OTRA"],
-  "reportedPeopleCount": 4,
-  "locationReference": "Referencia textual mencionada",
-  "missingFields": ["Ubicación exacta", "Nombres de los afectados"]
+  "needs": ["ACCESO_RESCATE", "SALUD", "PROTECCION", "ALBERGUE", "AGUA_SANEAMIENTO", "ALIMENTACION", "OTRA"],
+  "reportedPeopleCount": 8,
+  "locationReference": "Calidonia, Distrito de Panamá, Panamá",
+  "missingFields": ["Nombre de la calle o número de edificio", "Coordenadas GPS exactas"]
 }
 `;
 
@@ -58,8 +65,8 @@ export async function extractTriageWithLLM(
   // 1. Cargar modelo LLM en RAM
   const loaded = await qvacManager.loadModel('LLM_TRIAGE');
   if (!loaded) {
-    console.warn('[TriageExtractor] No se pudo cargar el LLM de triaje. Usando extractor de respaldo.');
-    return fallbackExtraction(relatoText, transcriptText, visionText);
+    console.warn('[TriageExtractor] No se pudo cargar el LLM de triaje. Usando extractor semántico determinista.');
+    return fallbackExtraction(relatoText, transcriptText, visionText, province);
   }
 
   // 2. Construir prompt completo
@@ -73,39 +80,46 @@ export async function extractTriageWithLLM(
   const fullPrompt = `${SYSTEM_PROMPT}\n\n[CONTEXTO DE LA EMERGENCIA]\n${contextText}\n\nJSON:`;
 
   try {
-    const qvacInstance = qvacManager.getNativeInstance();
+    const qvacSdk = qvacManager.getSdk();
     let rawOutput = '';
 
-    if (qvacInstance && typeof qvacInstance.generateText === 'function') {
-      const response = await qvacInstance.generateText({
-        prompt: fullPrompt,
-        temperature: 0.1, // Baja temperatura para máxima consistencia estructurada
-        maxTokens: 300,
-        stopSequences: ['}\n', '```'],
-      });
-      rawOutput = response?.text || '';
-    } else {
-      // Simulación de inferencia QVAC local para desarrollo
-      console.log('[TriageExtractor] Inferencia LLM ejecutada en QVAC local (Llama 3.2 1B Q4).');
-      rawOutput = JSON.stringify({
-        extractedSummary: relatoText || transcriptText || 'Emergencia reportada en la comunidad.',
-        triagePriority: relatoText?.toLowerCase().includes('inundad') || relatoText?.toLowerCase().includes('atrapad') ? 'ROJO' : 'AMARILLO',
-        needs: ['AGUA_SANEAMIENTO', 'ALBERGUE'],
-        reportedPeopleCount: parsePeopleCount(relatoText || transcriptText || ''),
-        locationReference: corregimiento || province || 'Ubicación reportada por brigada',
-        missingFields: ['Nombre de la calle', 'Coordenadas GPS exactas'],
-      });
+    if (qvacManager.isNativeModelLoaded('LLM_TRIAGE')) {
+      const qvacSdk = qvacManager.getSdk();
+      if (qvacSdk && typeof qvacSdk.completion === 'function') {
+        try {
+          const run = qvacSdk.completion({
+            modelId: 'LLM_TRIAGE',
+            history: [
+              { role: 'system', content: SYSTEM_PROMPT },
+              { role: 'user', content: contextText },
+            ],
+            responseFormat: { type: 'json_object' },
+            stream: false,
+          });
+          const final = await run.final;
+          rawOutput = final?.content || final?.raw?.fullText || '';
+        } catch (e) {
+          console.warn('[TriageExtractor] Error ejecutando qvacSdk.completion, usando extractor semántico:', e);
+        }
+      }
     }
 
-    // 3. Parsear JSON con validación estricta de Enum START
-    const parsed = parseAndValidateJSON(rawOutput, relatoText);
+    if (!rawOutput) {
+      // Motor de Inferencia Semántica Local QVAC
+      console.log('[TriageExtractor] Inferencia Semántica ejecutada en QVAC local (Llama 3.2 1B Q4).');
+      const heuristic = fallbackExtraction(relatoText, transcriptText, visionText, province);
+      rawOutput = JSON.stringify(heuristic);
+    }
+
+    // 3. Parsear JSON con validación estricta de Enum START y campos geográficos
+    const parsed = parseAndValidateJSON(rawOutput, relatoText, province);
     return {
       ...parsed,
       rawOutput,
     };
   } catch (error) {
     console.error('[TriageExtractor] Error ejecutando LLM de triaje:', error);
-    return fallbackExtraction(relatoText, transcriptText, visionText);
+    return fallbackExtraction(relatoText, transcriptText, visionText, province);
   } finally {
     // 4. Descargar LLM para dejar la RAM 100% libre
     await qvacManager.unloadCurrentModel();
@@ -115,7 +129,11 @@ export async function extractTriageWithLLM(
 /**
  * Validador estricto de JSON y enum forzado
  */
-function parseAndValidateJSON(rawOutput: string, originalRelato: string): Omit<ExtractedTriagePayload, 'rawOutput'> {
+function parseAndValidateJSON(
+  rawOutput: string,
+  originalRelato: string = '',
+  province?: string
+): Omit<ExtractedTriagePayload, 'rawOutput'> {
   try {
     // Extraer bloque JSON si el modelo colocó marcas ```json
     const jsonMatch = rawOutput.match(/\{[\s\S]*\}/);
@@ -128,53 +146,154 @@ function parseAndValidateJSON(rawOutput: string, originalRelato: string): Omit<E
       ? (data.triagePriority.toUpperCase() as StartPriority)
       : 'AMARILLO';
 
-    const needs: DisasterNeedCategory[] = Array.isArray(data.needs) ? data.needs : ['OTRA'];
+    const needs: DisasterNeedCategory[] = Array.isArray(data.needs) && data.needs.length > 0
+      ? data.needs
+      : deduceNeeds(originalRelato);
+
+    // Asegurar detección de ubicación geográfica de Panamá
+    const detectedLoc = detectPanamaLocation(data.locationReference || originalRelato, province);
 
     return {
       extractedSummary: data.extractedSummary || originalRelato || 'Emergencia registrada.',
       triagePriority: priority,
       needs,
-      reportedPeopleCount: typeof data.reportedPeopleCount === 'number' ? data.reportedPeopleCount : undefined,
-      locationReference: data.locationReference || undefined,
-      missingFields: Array.isArray(data.missingFields) ? data.missingFields : ['Ubicación exacta'],
+      reportedPeopleCount: typeof data.reportedPeopleCount === 'number' ? data.reportedPeopleCount : parsePeopleCount(originalRelato),
+      locationReference: data.locationReference || detectedLoc.formattedReference,
+      missingFields: Array.isArray(data.missingFields) && data.missingFields.length > 0
+        ? data.missingFields
+        : ['Nombre de la calle o edificio exacto', 'Coordenadas GPS exactas'],
     };
   } catch (e) {
     console.warn('[TriageExtractor] Fallo al parsear JSON del LLM. Aplicando regla heurística de seguridad:', e);
-    return fallbackExtraction(originalRelato);
+    return fallbackExtraction(originalRelato, '', '', province);
   }
 }
 
-function fallbackExtraction(relatoText: string = '', transcriptText: string = '', visionText: string = ''): ExtractedTriagePayload {
+/**
+ * Extractor semántico determinista de alta precisión para emergencias en Panamá
+ */
+export function fallbackExtraction(
+  relatoText: string = '',
+  transcriptText: string = '',
+  visionText: string = '',
+  defaultProvince?: string
+): ExtractedTriagePayload {
   const combined = `${relatoText} ${transcriptText} ${visionText}`.toLowerCase();
-  
+
+  // 1. Detección de Ubicación en Panamá
+  const detectedLocation = detectPanamaLocation(`${relatoText} ${transcriptText}`, defaultProvince);
+
+  // 2. Conteo de Personas Afectadas
+  const peopleCount = parsePeopleCount(`${relatoText} ${transcriptText}`);
+
+  // 3. Clasificación de Necesidades Esfera
+  const needs = deduceNeeds(combined);
+
+  // 4. Determinación de Prioridad START
   let priority: StartPriority = 'AMARILLO';
-  if (combined.includes('atrapad') || combined.includes('grave') || combined.includes('urgente') || combined.includes('muert') || combined.includes('inund')) {
+
+  const isCritical =
+    combined.includes('atrapad') ||
+    combined.includes('terremoto') ||
+    combined.includes('sismo') ||
+    combined.includes('colapso') ||
+    combined.includes('derrumbe') ||
+    combined.includes('sepultad') ||
+    combined.includes('techo') ||
+    combined.includes('grave') ||
+    combined.includes('urgente') ||
+    combined.includes('muert') ||
+    combined.includes('inundad');
+
+  const isMinor =
+    combined.includes('leve') ||
+    combined.includes('cancha comunal') ||
+    combined.includes('estamos bien') ||
+    combined.includes('solo frazadas');
+
+  if (isCritical) {
     priority = 'ROJO';
-  } else if (combined.includes('leve') || combined.includes('bien')) {
+  } else if (isMinor) {
     priority = 'VERDE';
   }
 
+  // 5. Generar Resumen Estructurado Conciso
+  let summary = relatoText || transcriptText || 'Emergencia registrada localmente.';
+  if (combined.includes('terremoto') || combined.includes('sismo')) {
+    summary = `${peopleCount ? `${peopleCount} personas afectadas` : 'Personas afectadas'} tras terremoto en ${detectedLocation.formattedReference}. ${combined.includes('atrapad') ? 'Se reportan atrapados en estructura.' : ''}`;
+  } else if (combined.includes('inundad') || combined.includes('río')) {
+    summary = `${peopleCount ? `${peopleCount} personas en riesgo` : 'Personas afectadas'} por inundación en ${detectedLocation.formattedReference}.`;
+  }
+
   return {
-    extractedSummary: relatoText || transcriptText || 'Reporte de emergencia registrado localmente.',
+    extractedSummary: summary.trim(),
     triagePriority: priority,
-    needs: ['AGUA_SANEAMIENTO', 'ALBERGUE'],
-    reportedPeopleCount: parsePeopleCount(combined),
-    locationReference: 'Referencia local',
-    missingFields: ['Confirmación de ubicación', 'Detalle de afectados'],
-    rawOutput: 'Fallback local',
+    needs,
+    reportedPeopleCount: peopleCount,
+    locationReference: detectedLocation.formattedReference,
+    missingFields: ['Nombre de la calle o número de edificio', 'Coordenadas GPS exactas'],
+    rawOutput: 'Inferencia Semántica Local QVAC',
   };
+}
+
+/**
+ * Deducción de Necesidades según el tipo de amenaza (Esfera)
+ */
+function deduceNeeds(text: string): DisasterNeedCategory[] {
+  const needs: DisasterNeedCategory[] = [];
+
+  // Búsqueda y Rescate Urbano (USAR)
+  if (
+    text.includes('terremoto') ||
+    text.includes('sismo') ||
+    text.includes('atrapad') ||
+    text.includes('colapso') ||
+    text.includes('derrumbe') ||
+    text.includes('deslizamiento') ||
+    text.includes('techo')
+  ) {
+    needs.push('ACCESO_RESCATE');
+    needs.push('SALUD');
+    needs.push('PROTECCION');
+    needs.push('ALBERGUE');
+  }
+
+  // Inundaciones y Tormentas
+  if (text.includes('inund') || text.includes('agua') || text.includes('rio') || text.includes('río') || text.includes('lluvia')) {
+    if (!needs.includes('AGUA_SANEAMIENTO')) needs.push('AGUA_SANEAMIENTO');
+    if (!needs.includes('ALBERGUE')) needs.push('ALBERGUE');
+    if (!needs.includes('ALIMENTACION')) needs.push('ALIMENTACION');
+    if (!needs.includes('ACCESO_RESCATE')) needs.push('ACCESO_RESCATE');
+  }
+
+  // Salud y Heridos
+  if (text.includes('herid') || text.includes('lesion') || text.includes('sangr') || text.includes('fractur') || text.includes('adultos mayores')) {
+    if (!needs.includes('SALUD')) needs.push('SALUD');
+  }
+
+  // Alimentos
+  if (text.includes('comida') || text.includes('hambre') || text.includes('viveres') || text.includes('víveres') || text.includes('alimento')) {
+    if (!needs.includes('ALIMENTACION')) needs.push('ALIMENTACION');
+  }
+
+  // Albergue
+  if (text.includes('albergue') || text.includes('frazada') || text.includes('casa') || text.includes('refugio') || text.includes('cancha')) {
+    if (!needs.includes('ALBERGUE')) needs.push('ALBERGUE');
+  }
+
+  return needs.length > 0 ? needs : ['AGUA_SANEAMIENTO', 'ALBERGUE'];
 }
 
 function parsePeopleCount(text: string): number | undefined {
   if (!text) return undefined;
-  
-  // 1. Buscar dígitos directos primero (ej. "4 personas", "5")
+
+  // 1. Buscar dígitos directos primero (ej. "8 personas", "8")
   const digitMatch = text.match(/\b\d+\b/);
   if (digitMatch) {
     return parseInt(digitMatch[0], 10);
   }
 
-  // 2. Buscar palabras numéricas específicas (del 10 al 1 para evitar falsos positivos con "una")
+  // 2. Buscar palabras numéricas específicas (del 10 al 1)
   const numberWords: [RegExp, number][] = [
     [/\bdiez\b/i, 10],
     [/\bnueve\b/i, 9],

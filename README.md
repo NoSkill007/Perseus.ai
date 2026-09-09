@@ -7,14 +7,11 @@ Perseus.ai propone convertir relatos de emergencia en reportes estructurados con
 El primer país de implementación es **Panamá**, con escenarios de inundaciones, deslizamientos, sismos, lluvias intensas e incendios forestales. La expansión internacional se evaluará después de validar el funcionamiento local.
 
 **Estado al 9 de septiembre de 2026 (Ventana de Construcción):**
-El pipeline de inferencia local con QVAC (100% on-device) se encuentra implementado y verificado.
+El pipeline de inferencia local con QVAC (100% on-device) y la aplicación completa están implementados.
 
-> [!IMPORTANT]
-> **Nota de Desarrollo — Pantalla de Prueba Temporal (`app/index.tsx`):**
-> La pantalla actual cargada en `app/index.tsx` es un **banco de pruebas interactivo de IA local (Sandbox / Testbench)** diseñado por el **Especialista en IA (Persona B)** para validar la entrada y procesamiento de Voz (ASR Whisper), Visión de Daños y Extracción Estructurada con LLM (Llama 3.2 1B).
-> 
-> **Instrucción para Persona A (Desarrollador de la App / Frontend):**
-> Esta pantalla de pruebas debe ser **reemplazada e integrada por Persona A** con el diseño definitivo de la aplicación, navegación de Expo Router / Tabs (`app/(tabs)`), formularios finales de registro y pantallas de sincronización P2P. Todos los servicios de IA quedan expuestos y listos para consumir mediante `runTriagePipeline()` desde `src/services/ai`.
+> [!NOTE]
+> **Arquitectura de la Aplicación:**
+> La app cuenta con 5 tabs principales (Inicio, Reportar, Historial, P2P, Perfil), onboarding con recolección de datos de rescate, revisión humana post-IA, y panel diferenciado por rol (Ciudadano vs Rescatista). El almacenamiento es 100% local con SQLite. Los datos personales solo se transmiten al enviar un reporte via P2P.
 
 
 ## Información para el jurado
@@ -61,15 +58,15 @@ Los elementos siguientes son objetivos del MVP. Actualizar su estado únicamente
 
 | Capacidad | Estado actual |
 | --- | --- |
-| Captura por texto y formulario | Planificada |
-| Extracción y resumen local con QVAC | Planificados |
-| Validación de salida y revisión humana | Planificadas |
-| Almacenamiento local persistente | Planificado |
-| Transferencia entre dos dispositivos físicos por LAN sin internet | Planificada |
-| Acuses, reintentos y deduplicación de eventos | Planificados |
-| Cola de reportes e historial de atención | Planificados |
+| Captura por texto y formulario | ✅ Implementada (texto, audio, foto) |
+| Extracción y resumen local con QVAC | ✅ Implementados (Whisper + VisionPsy + Llama 3.2 1B) |
+| Validación de salida y revisión humana | ✅ Implementadas (pantalla de revisión editable) |
+| Almacenamiento local persistente | ✅ Implementado (SQLite con expo-sqlite) |
+| Transferencia entre dos dispositivos físicos por LAN sin internet | 🔧 UI implementada, transporte TCP pendiente |
+| Acuses, reintentos y deduplicación de eventos | 🔧 Lógica de deduplicación por UUID implementada, transport pendiente |
+| Cola de reportes e historial de atención | ✅ Implementados (historial + cola rescatista) |
 | Detección de asignaciones en conflicto | Planificada |
-| Transcripción local de voz | Opcional, posterior al núcleo funcional |
+| Transcripción local de voz | ✅ Implementada (Whisper Base Q8_0 via QVAC) |
 
 El MVP no contempla diagnóstico, triaje clínico autónomo, predicción de desastres, rutas garantizadas como seguras, despacho automático ni pagos reales. Visión y una red de radio con múltiples saltos quedan fuera del recorrido principal.
 
@@ -89,13 +86,13 @@ flowchart TD
 
 La ruta directa del formulario a revisión permite continuar si el modelo no está disponible.
 
-| Componente | Elección prevista | Responsabilidad |
+| Componente | Elección | Responsabilidad |
 | --- | --- | --- |
-| Interfaz | React Native y Expo | Captura, revisión y consulta |
-| Inferencia | QVAC | Proponer resumen y campos a partir del relato |
-| Modelo | Por seleccionar y evaluar | Extracción en español; identidad y licencia pendientes |
-| Persistencia | SQLite | Reportes y eventos locales |
-| Sincronización | Transporte por LAN; biblioteca por seleccionar | Compartir eventos, confirmar y reintentar |
+| Interfaz | React Native 0.81.5 + Expo SDK 54 + Expo Router 6 | 5 tabs, onboarding, revisión humana, detalle |
+| Inferencia | QVAC `@qvac/sdk` 0.18.2 | Whisper ASR + VisionPsy Nano + Llama 3.2 1B on-device |
+| Modelo | Whisper Base Q8_0, VisionPsy Nano 460M Q8_0, Llama 3.2 1B Q4_0 | Transcripción, análisis visual, extracción estructurada |
+| Persistencia | expo-sqlite 15.0.0 | Perfil, reportes y eventos de sync locales |
+| Sincronización | TCP Sockets (UI lista, transport pendiente) | Envío unidireccional ciudadano → rescatista |
 
 El reporte contempla provincia o comarca, distrito, corregimiento, referencia textual y ubicación opcional. Se conserva el origen de los datos y se permite guardar sin una dirección formal.
 

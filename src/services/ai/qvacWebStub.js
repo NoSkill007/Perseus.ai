@@ -2,24 +2,30 @@
  * Web Stub para @qvac/sdk
  * Permite que Expo Web empaquete la aplicación sin errores de importación dinámica de Node.
  */
-export class QvacClient {
-  constructor(options = {}) {
-    this.options = options;
-  }
-  async loadModel() {
-    return true;
-  }
-  async unloadCurrentModel() {
-    return true;
-  }
-  async loadMultimodalModel() {
-    return true;
-  }
-  async chat() {
-    return { text: '' };
-  }
+export async function loadModel(options) {
+  return 'loaded-model-id';
+}
+
+export async function unloadModel(options) {
+  return true;
+}
+
+export function completion(params) {
+  return {
+    final: Promise.resolve({
+      content: '',
+      raw: { fullText: '' },
+    }),
+  };
+}
+
+export async function transcribe(options) {
+  return { text: '' };
 }
 
 export default {
-  QvacClient,
+  loadModel,
+  unloadModel,
+  completion,
+  transcribe,
 };

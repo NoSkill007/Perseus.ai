@@ -1,7 +1,7 @@
 import { Audio } from 'expo-av';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
-import { Platform } from 'react-native';
+import { Alert, Platform } from 'react-native';
 
 export interface AudioRecordingState {
   isRecording: boolean;
@@ -11,28 +11,36 @@ export interface AudioRecordingState {
 }
 
 /**
- * Solicita permisos e inicia la grabación de audio local
+ * Solicita permisos e inicia la grabación de audio local con feedback continuo
  */
-export async function startAudioRecording(): Promise<Audio.Recording | null> {
+export async function startAudioRecording(
+  onStatusUpdate?: (status: Audio.RecordingStatus) => void
+): Promise<Audio.Recording | null> {
   try {
-    const { granted } = await Audio.requestPermissionsAsync();
-    if (!granted) {
-      alert('Se requiere permiso de micrófono para grabar audio.');
+    const permission = await Audio.requestPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Permiso requerido', 'Se requiere permiso de micrófono para grabar audio.');
       return null;
     }
 
     await Audio.setAudioModeAsync({
       allowsRecordingIOS: true,
       playsInSilentModeIOS: true,
+      staysActiveInBackground: false,
+      shouldDuckAndroid: true,
+      playThroughEarpieceAndroid: false,
     });
 
-    const recording = new Audio.Recording();
-    await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
-    await recording.startAsync();
+    const { recording } = await Audio.Recording.createAsync(
+      Audio.RecordingOptionsPresets.HIGH_QUALITY,
+      onStatusUpdate,
+      250 // Actualización cada 250ms para fluidez de cronómetro
+    );
+
     return recording;
   } catch (err) {
     console.error('[MediaCapture] Error al iniciar grabación de audio:', err);
-    alert('No se pudo iniciar la grabación de audio.');
+    Alert.alert('Error', 'No se pudo iniciar la grabación de audio en el dispositivo.');
     return null;
   }
 }
@@ -42,11 +50,20 @@ export async function startAudioRecording(): Promise<Audio.Recording | null> {
  */
 export async function stopAudioRecording(recording: Audio.Recording): Promise<string | null> {
   try {
-    await recording.stopAndUnloadAsync();
+    const status = await recording.getStatusAsync();
+    if (status.canRecord) {
+      await recording.stopAndUnloadAsync();
+    }
     const uri = recording.getURI();
+
     await Audio.setAudioModeAsync({
       allowsRecordingIOS: false,
+      playsInSilentModeIOS: true,
+      staysActiveInBackground: false,
+      shouldDuckAndroid: true,
+      playThroughEarpieceAndroid: false,
     });
+
     return uri;
   } catch (err) {
     console.error('[MediaCapture] Error al detener grabación de audio:', err);
@@ -81,7 +98,7 @@ export async function takeCameraPhoto(): Promise<string | null> {
   try {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') {
-      alert('Se requiere permiso de cámara para capturar fotos de la emergencia.');
+      Alert.alert('Permiso requerido', 'Se requiere permiso de cámara para capturar fotos de la emergencia.');
       return null;
     }
 
@@ -108,7 +125,7 @@ export async function pickGalleryImage(): Promise<string | null> {
   try {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      alert('Se requiere permiso de galería para seleccionar imágenes.');
+      Alert.alert('Permiso requerido', 'Se requiere permiso de galería para seleccionar imágenes.');
       return null;
     }
 
