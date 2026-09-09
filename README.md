@@ -6,7 +6,16 @@ Perseus.ai propone convertir relatos de emergencia en reportes estructurados con
 
 El primer país de implementación es **Panamá**, con escenarios de inundaciones, deslizamientos, sismos, lluvias intensas e incendios forestales. La expansión internacional se evaluará después de validar el funcionamiento local.
 
-**Estado al 8 de septiembre de 2026:** preparación y diseño. Este README documenta el alcance previsto; todavía no acredita una aplicación implementada ni resultados de pruebas. La construcción sustancial está prevista para la ventana oficial del hackathon.
+**Estado al 9 de septiembre de 2026 (Ventana de Construcción):**
+El pipeline de inferencia local con QVAC (100% on-device) se encuentra implementado y verificado.
+
+> [!IMPORTANT]
+> **Nota de Desarrollo — Pantalla de Prueba Temporal (`app/index.tsx`):**
+> La pantalla actual cargada en `app/index.tsx` es un **banco de pruebas interactivo de IA local (Sandbox / Testbench)** diseñado por el **Especialista en IA (Persona B)** para validar la entrada y procesamiento de Voz (ASR Whisper), Visión de Daños y Extracción Estructurada con LLM (Llama 3.2 1B).
+> 
+> **Instrucción para Persona A (Desarrollador de la App / Frontend):**
+> Esta pantalla de pruebas debe ser **reemplazada e integrada por Persona A** con el diseño definitivo de la aplicación, navegación de Expo Router / Tabs (`app/(tabs)`), formularios finales de registro y pantallas de sincronización P2P. Todos los servicios de IA quedan expuestos y listos para consumir mediante `runTriagePipeline()` desde `src/services/ai`.
+
 
 ## Información para el jurado
 
@@ -110,18 +119,24 @@ La integración deberá mantener todas las rutas de inferencia dentro de QVAC y 
 
 ## Instalación y ejecución
 
-**Pendiente de implementación y verificación.** Aún no se han establecido comandos reproducibles para esta aplicación. Esta sección se completará con los comandos reales del repositorio, probados desde una instalación limpia.
+### Ejecución del Banco de Pruebas de IA (Testbench)
 
-| Dato necesario | Por completar durante la construcción |
-| --- | --- |
-| Plataforma y dispositivo comprobados | Sistema operativo, versión, procesador y memoria |
-| Herramientas | Versiones exactas del runtime, gestor de paquetes y herramientas de compilación |
-| Dependencias | Comando de instalación y archivo de bloqueo utilizado |
-| Modelo | Identificador, versión, origen, licencia, cuantización, tamaño y SHA-256 |
-| Preparación del modelo | Comando o procedimiento de descarga y ubicación local de los pesos |
-| Compilación e inicio | Comandos reales para instalar y abrir la aplicación |
-| Segundo dispositivo | Emparejamiento, red local y permisos necesarios |
-| Pruebas | Comandos o pasos exactos, datos utilizados y resultados esperados |
+Para probar la inferencia y el pipeline de IA local (Voz, Visión, LLM) en la pantalla de prueba:
+
+```bash
+# 1. Instalar dependencias
+npm install
+
+# 2. Ejecutar pruebas unitarias de IA
+npm run test:ai
+
+# 3. Iniciar en Navegador Web (Simulador interactivo)
+npx expo start --web
+
+# 4. Iniciar en Dispositivo Físico Android (App nativa)
+npm start
+```
+
 
 Recorrido que deberán cubrir las instrucciones finales:
 
