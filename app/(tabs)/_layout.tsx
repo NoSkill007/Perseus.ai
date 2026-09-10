@@ -3,6 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getUserRole } from '../../src/services/profileService';
+import { useTheme } from '../../src/context/ThemeContext';
 
 /**
  * Tab Navigator — Perseus.ai
@@ -14,6 +15,7 @@ export default function TabLayout() {
   const insets = useSafeAreaInsets();
   const role = getUserRole(db);
   const isRescatista = role === 'rescatista';
+  const { theme } = useTheme();
 
   const bottomInset = insets.bottom > 0 ? insets.bottom : 8;
 
@@ -22,15 +24,15 @@ export default function TabLayout() {
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
-          backgroundColor: '#0F172A',
-          borderTopColor: '#334155',
+          backgroundColor: theme.tabBarBg,
+          borderTopColor: theme.tabBarBorder,
           borderTopWidth: 1,
           height: 56 + bottomInset,
           paddingBottom: bottomInset,
           paddingTop: 6,
         },
-        tabBarActiveTintColor: '#3B82F6',
-        tabBarInactiveTintColor: '#94A3B8',
+        tabBarActiveTintColor: theme.tabBarActive,
+        tabBarInactiveTintColor: theme.tabBarInactive,
         tabBarLabelStyle: {
           fontSize: 11,
           fontWeight: '600',

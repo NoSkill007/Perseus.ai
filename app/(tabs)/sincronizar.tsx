@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -15,6 +15,8 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '../../src/context/ThemeContext';
+import { ThemeColors } from '../../src/constants/theme';
 import { getProfile } from '../../src/services/profileService';
 import {
   getReports,
@@ -110,6 +112,9 @@ function getProximityLabel(rssi: number): { badge: string; label: string; color:
 }
 
 export default function SincronizarScreen() {
+  const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  const modalStyles = useMemo(() => createModalStyles(theme), [theme]);
   const db = useSQLiteContext();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -938,7 +943,7 @@ export default function SincronizarScreen() {
         contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 40 }]}
       >
         <View style={styles.header}>
-          <Text style={styles.title}>📡 Sincronización P2P</Text>
+          <Text style={styles.title}>Sincronización P2P</Text>
           <Text style={styles.subtitle}>
             Transferencia de reportes 100% offline entre dispositivos
           </Text>
@@ -965,7 +970,7 @@ export default function SincronizarScreen() {
             <Ionicons
               name="radio"
               size={18}
-              color={transport === 'nearby' ? '#F8FAFC' : '#38BDF8'}
+              color={transport === 'nearby' ? '#FFFFFF' : (theme.isDark ? '#38BDF8' : theme.primary)}
             />
             <Text
               style={[
@@ -999,7 +1004,7 @@ export default function SincronizarScreen() {
             <Ionicons
               name="wifi"
               size={18}
-              color={transport === 'wifi_lan' ? '#F8FAFC' : '#94A3B8'}
+              color={transport === 'wifi_lan' ? '#FFFFFF' : theme.textMuted}
             />
             <Text
               style={[
@@ -1044,7 +1049,7 @@ export default function SincronizarScreen() {
             <Ionicons
               name="bluetooth"
               size={18}
-              color={transport === 'bluetooth' ? '#F8FAFC' : '#94A3B8'}
+              color={transport === 'bluetooth' ? '#FFFFFF' : theme.textMuted}
             />
             <Text
               style={[
@@ -1060,17 +1065,17 @@ export default function SincronizarScreen() {
         {/* Tarjeta de Métricas / Resumen */}
         <View style={styles.statsRow}>
           <View style={styles.statBox}>
-            <Ionicons name="arrow-up-circle" size={20} color="#3B82F6" />
+            <Ionicons name="arrow-up-circle" size={20} color={theme.primary} />
             <Text style={styles.statNum}>{stats.totalSent}</Text>
             <Text style={styles.statLabel}>Enviados</Text>
           </View>
           <View style={styles.statBox}>
-            <Ionicons name="arrow-down-circle" size={20} color="#22C55E" />
+            <Ionicons name="arrow-down-circle" size={20} color={theme.success} />
             <Text style={styles.statNum}>{stats.totalReceived}</Text>
             <Text style={styles.statLabel}>Recibidos</Text>
           </View>
           <View style={styles.statBox}>
-            <Ionicons name="copy-outline" size={20} color="#F59E0B" />
+            <Ionicons name="copy-outline" size={20} color={theme.warning} />
             <Text style={styles.statNum}>{stats.totalDuplicates}</Text>
             <Text style={styles.statLabel}>Duplicados</Text>
           </View>
@@ -1079,11 +1084,11 @@ export default function SincronizarScreen() {
         {/* ==================== VISTA GOOGLE NEARBY CONNECTIONS ==================== */}
         {transport === 'nearby' ? (
           <>
-            <View style={[styles.card, { borderColor: '#3B82F6', borderWidth: 1.5 }]}>
+            <View style={[styles.card, { borderColor: theme.primary, borderWidth: 1.5 }]}>
               <View style={styles.cardHeaderRow}>
                 <View style={{ flex: 1, paddingRight: 8 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Ionicons name="radio" size={20} color="#38BDF8" />
+                    <Ionicons name="radio" size={20} color={theme.isDark ? '#38BDF8' : theme.primary} />
                     <Text style={[styles.cardTitle, { flexShrink: 1 }]}>Red Mesh Nearby (Cluster P2P)</Text>
                   </View>
                   <Text style={styles.cardDesc}>
@@ -1092,7 +1097,7 @@ export default function SincronizarScreen() {
                       : 'Descubre y conecta pares cercanos para transferir reportes con audio y fotos.'}
                   </Text>
                 </View>
-                <View style={[styles.statusDot, { backgroundColor: isNearbyActive ? '#22C55E' : '#EF4444' }]} />
+                <View style={[styles.statusDot, { backgroundColor: isNearbyActive ? theme.success : theme.danger }]} />
               </View>
 
               <TouchableOpacity
@@ -1103,7 +1108,7 @@ export default function SincronizarScreen() {
                 <Ionicons
                   name={isNearbyActive ? 'stop-circle' : 'play-circle'}
                   size={20}
-                  color="#F8FAFC"
+                  color="#FFFFFF"
                 />
                 <Text style={styles.mainButtonText}>
                   {isNearbyActive ? 'Detener Red Nearby' : 'Activar Red Nearby'}
@@ -1114,15 +1119,15 @@ export default function SincronizarScreen() {
               {isNearbyActive && (
                 <View style={{ marginTop: 14 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                    <Text style={{ fontSize: 13, fontWeight: '700', color: '#CBD5E1' }}>
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: theme.textSecondary }}>
                       Pares Detectados ({nearbyEndpoints.length}):
                     </Text>
-                    <ActivityIndicator size="small" color="#38BDF8" />
+                    <ActivityIndicator size="small" color={theme.isDark ? '#38BDF8' : theme.primary} />
                   </View>
 
                   {nearbyEndpoints.length === 0 ? (
                     <View style={{ paddingVertical: 12, alignItems: 'center' }}>
-                      <Text style={{ color: '#94A3B8', fontSize: 12, textAlign: 'center' }}>
+                      <Text style={{ color: theme.textMuted, fontSize: 12, textAlign: 'center' }}>
                         Buscando y anunciando en el cluster... Acerca otro teléfono con Perseus.ai
                       </Text>
                     </View>
@@ -1135,28 +1140,28 @@ export default function SincronizarScreen() {
                         <View
                           key={ep.endpointId}
                           style={{
-                            backgroundColor: '#0F172A',
+                            backgroundColor: theme.cardInner,
                             borderRadius: 10,
                             padding: 12,
                             marginTop: 8,
                             borderWidth: 1,
-                            borderColor: isConnected ? '#22C55E' : '#334155',
+                            borderColor: isConnected ? theme.success : theme.border,
                           }}
                         >
                           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                             <View style={{ flex: 1 }}>
-                              <Text style={{ color: '#F8FAFC', fontSize: 14, fontWeight: '700' }}>
+                              <Text style={{ color: theme.text, fontSize: 14, fontWeight: '700' }}>
                                 {ep.endpointName}
                               </Text>
-                              <Text style={{ color: '#94A3B8', fontSize: 11, marginTop: 2 }}>
+                              <Text style={{ color: theme.textMuted, fontSize: 11, marginTop: 2 }}>
                                 ID: {ep.endpointId} • P2P Cluster
                               </Text>
                             </View>
 
                             <View
                               style={{
-                                backgroundColor: isConnected ? '#22C55E20' : '#3B82F620',
-                                borderColor: isConnected ? '#22C55E' : '#3B82F6',
+                                backgroundColor: isConnected ? (theme.isDark ? '#22C55E20' : '#DCFCE7') : (theme.isDark ? '#3B82F620' : '#DBEAFE'),
+                                borderColor: isConnected ? theme.success : theme.primary,
                                 borderWidth: 1,
                                 paddingVertical: 2,
                                 paddingHorizontal: 8,
@@ -1165,7 +1170,7 @@ export default function SincronizarScreen() {
                             >
                               <Text
                                 style={{
-                                  color: isConnected ? '#22C55E' : '#38BDF8',
+                                  color: isConnected ? theme.success : (theme.isDark ? '#38BDF8' : theme.primary),
                                   fontSize: 11,
                                   fontWeight: '800',
                                 }}
@@ -1181,16 +1186,16 @@ export default function SincronizarScreen() {
                               <TouchableOpacity
                                 style={[
                                   styles.mainButton,
-                                  { flex: 1, marginTop: 0, paddingVertical: 8, backgroundColor: '#3B82F6' },
+                                  { flex: 1, marginTop: 0, paddingVertical: 8, backgroundColor: theme.primary },
                                 ]}
                                 onPress={() => handleConnectToNearbyEndpoint(ep)}
                                 disabled={isConnecting}
                                 activeOpacity={0.8}
                               >
                                 {isConnecting ? (
-                                  <ActivityIndicator size="small" color="#F8FAFC" />
+                                  <ActivityIndicator size="small" color="#FFFFFF" />
                                 ) : (
-                                  <Ionicons name="link" size={16} color="#F8FAFC" />
+                                  <Ionicons name="link" size={16} color="#FFFFFF" />
                                 )}
                                 <Text style={[styles.mainButtonText, { fontSize: 13 }]}>
                                   {isConnecting ? 'Conectando...' : 'Conectar'}
@@ -1201,12 +1206,12 @@ export default function SincronizarScreen() {
                                 <TouchableOpacity
                                   style={[
                                     styles.mainButton,
-                                    { flex: 2, marginTop: 0, paddingVertical: 8, backgroundColor: '#16A34A' },
+                                    { flex: 2, marginTop: 0, paddingVertical: 8, backgroundColor: theme.success },
                                   ]}
                                   onPress={() => handleSendReportsViaNearby(ep.endpointId)}
                                   activeOpacity={0.8}
                                 >
-                                  <Ionicons name="send" size={16} color="#F8FAFC" />
+                                  <Ionicons name="send" size={16} color="#FFFFFF" />
                                   <Text style={[styles.mainButtonText, { fontSize: 13 }]}>
                                     Enviar {selectedReportIds.size} Reporte(s)
                                   </Text>
@@ -1215,12 +1220,12 @@ export default function SincronizarScreen() {
                                 <TouchableOpacity
                                   style={[
                                     styles.secondaryButton,
-                                    { flex: 1, marginTop: 0, paddingVertical: 8, borderColor: '#EF4444' },
+                                    { flex: 1, marginTop: 0, paddingVertical: 8, borderColor: theme.danger },
                                   ]}
                                   onPress={() => handleDisconnectNearby(ep.endpointId)}
                                   activeOpacity={0.8}
                                 >
-                                  <Text style={[styles.secondaryButtonText, { color: '#EF4444', fontSize: 13 }]}>
+                                  <Text style={[styles.secondaryButtonText, { color: theme.danger, fontSize: 13 }]}>
                                     Desconectar
                                   </Text>
                                 </TouchableOpacity>
@@ -1246,7 +1251,7 @@ export default function SincronizarScreen() {
             {/* Selección de Reportes para Transmisión Nearby */}
             <View style={styles.card}>
               <Text style={styles.cardTitle}>
-                📋 Seleccionar Reportes para Envío ({pendingReports.length})
+                Seleccionar Reportes para Envío ({pendingReports.length})
               </Text>
               <Text style={styles.cardDesc}>
                 Los reportes seleccionados se enviarán con su ficha clínica JSON, notas de voz y fotos adjuntas.
@@ -1254,7 +1259,7 @@ export default function SincronizarScreen() {
 
               {pendingReports.length === 0 ? (
                 <View style={styles.emptyContainer}>
-                  <Ionicons name="checkmark-circle-outline" size={36} color="#22C55E" />
+                  <Ionicons name="checkmark-circle-outline" size={36} color={theme.success} />
                   <Text style={styles.emptyText}>No tienes reportes pendientes por sincronizar</Text>
                 </View>
               ) : (
@@ -1270,7 +1275,7 @@ export default function SincronizarScreen() {
                       <Ionicons
                         name={isSelected ? 'checkbox' : 'square-outline'}
                         size={22}
-                        color={isSelected ? '#3B82F6' : '#64748B'}
+                        color={isSelected ? theme.primary : theme.textMuted}
                       />
                       <View style={{ flex: 1, marginLeft: 10 }}>
                         <Text style={styles.reportSummary} numberOfLines={2}>
@@ -1301,7 +1306,7 @@ export default function SincronizarScreen() {
                     Escuchando paquetes entrantes en {transport === 'wifi_lan' ? `Puerto ${P2P_PORT}` : 'Canal Bluetooth'}
                   </Text>
                 </View>
-                <View style={[styles.statusDot, { backgroundColor: isListening ? '#22C55E' : '#EF4444' }]} />
+                <View style={[styles.statusDot, { backgroundColor: isListening ? theme.success : theme.danger }]} />
               </View>
 
               <TouchableOpacity
@@ -1312,7 +1317,7 @@ export default function SincronizarScreen() {
                 <Ionicons
                   name={isListening ? 'stop-circle' : 'play-circle'}
                   size={20}
-                  color="#F8FAFC"
+                  color="#FFFFFF"
                 />
                 <Text style={styles.mainButtonText}>
                   {isListening ? 'Detener Recepción' : 'Activar Receptor'}
@@ -1325,20 +1330,20 @@ export default function SincronizarScreen() {
                 onPress={handleSimulateIncomingPacket}
                 activeOpacity={0.8}
               >
-                <Ionicons name="download-outline" size={18} color="#3B82F6" />
+                <Ionicons name="download-outline" size={18} color={theme.primary} />
                 <Text style={styles.secondaryButtonText}>Simular Paquete Entrante</Text>
               </TouchableOpacity>
             </View>
 
             {/* Radar de Proximidad BLE AirTag en Vivo */}
             {isListening && transport === 'bluetooth' && (
-              <View style={[styles.card, { borderColor: '#3B82F6', borderWidth: 1.5 }]}>
+              <View style={[styles.card, { borderColor: theme.primary, borderWidth: 1.5 }]}>
                 <View style={styles.cardHeaderRow}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <Ionicons name="radio" size={20} color="#38BDF8" />
-                    <Text style={styles.cardTitle}>🎯 Radar BLE AirTag (Sin Emparejar)</Text>
+                    <Ionicons name="radio" size={20} color={theme.isDark ? '#38BDF8' : theme.primary} />
+                    <Text style={styles.cardTitle}>Radar BLE AirTag</Text>
                   </View>
-                  <Text style={{ fontSize: 11, color: '#38BDF8', fontWeight: '700' }}>
+                  <Text style={{ fontSize: 11, color: theme.isDark ? '#38BDF8' : theme.primary, fontWeight: '700' }}>
                     {detectedBeacons.length > 0 ? `${detectedBeacons.length} detectadas` : 'Rastreando...'}
                   </Text>
                 </View>
@@ -1348,8 +1353,8 @@ export default function SincronizarScreen() {
 
                 {detectedBeacons.length === 0 ? (
                   <View style={{ paddingVertical: 16, alignItems: 'center' }}>
-                    <ActivityIndicator color="#3B82F6" />
-                    <Text style={{ color: '#94A3B8', fontSize: 12, marginTop: 8 }}>
+                    <ActivityIndicator color={theme.primary} />
+                    <Text style={{ color: theme.textMuted, fontSize: 12, marginTop: 8 }}>
                       Esperando balizas de emergencia en el éter...
                     </Text>
                   </View>
@@ -1364,14 +1369,14 @@ export default function SincronizarScreen() {
                       <TouchableOpacity
                         key={beacon.deviceAddress + idx}
                         style={{
-                          backgroundColor: '#0F172A',
+                          backgroundColor: theme.cardInner,
                           borderRadius: 10,
                           padding: 12,
                           marginTop: 8,
                           borderLeftWidth: 5,
                           borderLeftColor: badgeBg,
                           borderWidth: 1,
-                          borderColor: '#334155',
+                          borderColor: theme.border,
                         }}
                         onPress={() => {
                           setSelectedBeacon(beacon);
@@ -1389,11 +1394,11 @@ export default function SincronizarScreen() {
                                 borderRadius: 4,
                               }}
                             >
-                              <Text style={{ color: '#F8FAFC', fontSize: 11, fontWeight: '800' }}>
+                              <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '800' }}>
                                 {beacon.priority}
                               </Text>
                             </View>
-                            <Text style={{ color: '#F8FAFC', fontSize: 13, fontWeight: '700' }}>
+                            <Text style={{ color: theme.text, fontSize: 13, fontWeight: '700' }}>
                               👥 {beacon.peopleCount} {beacon.peopleCount > 1 ? 'víctimas' : 'víctima'}
                             </Text>
                           </View>
@@ -1413,14 +1418,14 @@ export default function SincronizarScreen() {
                                 {prox.badge}
                               </Text>
                             </View>
-                            <Text style={{ color: '#CBD5E1', fontSize: 10, fontWeight: '600' }}>
+                            <Text style={{ color: theme.textSecondary, fontSize: 10, fontWeight: '600' }}>
                               {prox.label}
                             </Text>
                           </View>
                         </View>
 
                         <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 }}>
-                          <Text style={{ color: '#94A3B8', fontSize: 11 }}>
+                          <Text style={{ color: theme.textMuted, fontSize: 11 }}>
                             ID: #{beacon.reportIdShort} • {beacon.deviceName || beacon.deviceAddress.slice(0, 8)}
                           </Text>
                           <Text style={{ color: prox.color, fontSize: 11, fontWeight: '700' }}>
@@ -1437,13 +1442,13 @@ export default function SincronizarScreen() {
                             marginTop: 10,
                             paddingTop: 8,
                             borderTopWidth: 1,
-                            borderTopColor: '#1E293B',
+                            borderTopColor: theme.border,
                           }}
                         >
-                          <Text style={{ color: '#38BDF8', fontSize: 11, fontWeight: '700' }}>
+                          <Text style={{ color: theme.isDark ? '#38BDF8' : theme.primary, fontSize: 11, fontWeight: '700' }}>
                             👉 Toca para abrir Tarjeta de Triaje y Opciones
                           </Text>
-                          <Ionicons name="chevron-forward" size={14} color="#38BDF8" />
+                          <Ionicons name="chevron-forward" size={14} color={theme.isDark ? '#38BDF8' : theme.primary} />
                         </View>
                       </TouchableOpacity>
                     );
@@ -1458,7 +1463,7 @@ export default function SincronizarScreen() {
                 <Text style={styles.cardTitle}>👥 Nodos en la Red Mesh ({nodes.length})</Text>
                 {nodes.map((n) => (
                   <View key={n.id} style={styles.nodeItem}>
-                    <Ionicons name="radio" size={18} color="#22C55E" />
+                    <Ionicons name="radio" size={18} color={theme.success} />
                     <View style={{ flex: 1, marginLeft: 8 }}>
                       <Text style={styles.nodeCallsign}>{n.callsign}</Text>
                       <Text style={styles.nodeMeta}>
@@ -1476,11 +1481,11 @@ export default function SincronizarScreen() {
           <>
             <View style={styles.card}>
               <Text style={styles.cardTitle}>
-                📤 Reportes Confirmados para Envío ({pendingReports.length})
+                Reportes Confirmados para Envío ({pendingReports.length})
               </Text>
               {pendingReports.length === 0 ? (
                 <View style={styles.emptyContainer}>
-                  <Ionicons name="checkmark-circle-outline" size={36} color="#22C55E" />
+                  <Ionicons name="checkmark-circle-outline" size={36} color={theme.success} />
                   <Text style={styles.emptyText}>No tienes reportes pendientes por sincronizar</Text>
                 </View>
               ) : (
@@ -1496,7 +1501,7 @@ export default function SincronizarScreen() {
                       <Ionicons
                         name={isSelected ? 'checkbox' : 'square-outline'}
                         size={22}
-                        color={isSelected ? '#3B82F6' : '#64748B'}
+                        color={isSelected ? theme.primary : theme.textMuted}
                       />
                       <View style={{ flex: 1, marginLeft: 10 }}>
                         <Text style={styles.reportSummary} numberOfLines={2}>
@@ -1528,7 +1533,7 @@ export default function SincronizarScreen() {
                           <Ionicons
                             name="radio"
                             size={28}
-                            color={isBatterySaving ? '#F59E0B' : '#EF4444'}
+                            color={isBatterySaving ? theme.warning : theme.danger}
                           />
                         </Animated.View>
                         <View style={{ flex: 1, marginLeft: 12 }}>
@@ -1549,7 +1554,7 @@ export default function SincronizarScreen() {
                         onPress={handleStopContinuousBeacon}
                         activeOpacity={0.8}
                       >
-                        <Ionicons name="stop-circle" size={22} color="#F8FAFC" />
+                        <Ionicons name="stop-circle" size={22} color="#FFFFFF" />
                         <Text style={styles.stopBeaconButtonText}>
                           Cancelar Búsqueda / Detener Baliza
                         </Text>
@@ -1563,7 +1568,7 @@ export default function SincronizarScreen() {
                         }}
                         activeOpacity={0.8}
                       >
-                        <Ionicons name="checkmark-done-circle" size={18} color="#34D399" />
+                        <Ionicons name="checkmark-done-circle" size={18} color={theme.success} />
                         <Text style={styles.simulateAckButtonText}>
                           🎯 Simular Llegada de Rescatista (Confirmar ACK)
                         </Text>
@@ -1583,7 +1588,7 @@ export default function SincronizarScreen() {
                         disabled={selectedReportIds.size === 0}
                         activeOpacity={0.8}
                       >
-                        <Ionicons name="radio" size={20} color="#F8FAFC" />
+                        <Ionicons name="radio" size={20} color="#FFFFFF" />
                         <Text style={styles.mainButtonText}>
                           🚨 Emitir Baliza Continua SOS ({selectedReportIds.size})
                         </Text>
@@ -1600,9 +1605,9 @@ export default function SincronizarScreen() {
                         activeOpacity={0.8}
                       >
                         {isSyncing ? (
-                          <ActivityIndicator color="#3B82F6" />
+                          <ActivityIndicator color={theme.primary} />
                         ) : (
-                          <Ionicons name="paper-plane-outline" size={18} color="#3B82F6" />
+                          <Ionicons name="paper-plane-outline" size={18} color={theme.primary} />
                         )}
                         <Text style={styles.secondaryButtonText}>
                           {isSyncing ? 'Enviando...' : 'Intento de Envío Único'}
@@ -1630,7 +1635,7 @@ export default function SincronizarScreen() {
           <View style={styles.cardHeaderRow}>
             <Text style={styles.cardTitle}>📋 Bitácora de Auditoría P2P</Text>
             <TouchableOpacity onPress={loadData}>
-              <Ionicons name="refresh" size={18} color="#3B82F6" />
+              <Ionicons name="refresh" size={18} color={theme.primary} />
             </TouchableOpacity>
           </View>
           <Text style={styles.cardDesc}>
@@ -1653,10 +1658,10 @@ export default function SincronizarScreen() {
                   size={16}
                   color={
                     log.status === 'fallido'
-                      ? '#EF4444'
+                      ? theme.danger
                       : log.status === 'duplicado'
-                      ? '#F59E0B'
-                      : '#22C55E'
+                      ? theme.warning
+                      : theme.success
                   }
                 />
                 <View style={{ flex: 1, marginLeft: 8 }}>
@@ -1714,7 +1719,7 @@ export default function SincronizarScreen() {
                           : 'checkmark-circle'
                       }
                       size={28}
-                      color="#F8FAFC"
+                      color="#FFFFFF"
                     />
                     <View style={{ flex: 1 }}>
                       <Text style={modalStyles.headerTitle}>
@@ -1735,7 +1740,7 @@ export default function SincronizarScreen() {
                     onPress={() => setIsBeaconDetailModalOpen(false)}
                     style={modalStyles.closeBtn}
                   >
-                    <Ionicons name="close" size={22} color="#F8FAFC" />
+                    <Ionicons name="close" size={22} color="#FFFFFF" />
                   </TouchableOpacity>
                 </View>
 
@@ -1748,7 +1753,7 @@ export default function SincronizarScreen() {
                         <>
                           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                              <Ionicons name="radio" size={22} color="#38BDF8" />
+                              <Ionicons name="radio" size={22} color={theme.isDark ? '#38BDF8' : theme.primary} />
                               <Text style={modalStyles.cardTitle}>Proximidad de Señal</Text>
                             </View>
                             <View
@@ -1788,14 +1793,14 @@ export default function SincronizarScreen() {
                   </View>
 
                   {/* Aviso informativo de Baliza BLE vs Ficha Completa */}
-                  <View style={[modalStyles.card, { backgroundColor: '#1E293B', borderColor: '#3B82F6', borderWidth: 1 }]}>
+                  <View style={[modalStyles.card, { backgroundColor: theme.card, borderColor: theme.primary, borderWidth: 1 }]}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                      <Ionicons name="information-circle" size={18} color="#38BDF8" />
-                      <Text style={{ fontSize: 13, fontWeight: '700', color: '#38BDF8' }}>
+                      <Ionicons name="information-circle" size={18} color={theme.isDark ? '#38BDF8' : theme.primary} />
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: theme.isDark ? '#38BDF8' : theme.primary }}>
                         Canal de Transmisión Táctica
                       </Text>
                     </View>
-                    <Text style={{ fontSize: 12, color: '#94A3B8', lineHeight: 18 }}>
+                    <Text style={{ fontSize: 12, color: theme.textMuted, lineHeight: 18 }}>
                       Esta baliza transmite al aire la prioridad START ({selectedBeacon.priority}) y número de víctimas. Para descargar el relato detallado con nota de voz, fotos y heridas específicas del ciudadano, sincroniza directamente por Bluetooth emparejado o Wi-Fi Hotspot.
                     </Text>
                   </View>
@@ -1807,14 +1812,14 @@ export default function SincronizarScreen() {
                     <View style={{ marginTop: 8, gap: 6 }}>
                       <View style={modalStyles.infoRow}>
                         <Text style={modalStyles.infoLabel}>Personas reportadas:</Text>
-                        <Text style={[modalStyles.infoValue, { fontWeight: '700', color: '#F8FAFC' }]}>
+                        <Text style={[modalStyles.infoValue, { fontWeight: '700', color: theme.text }]}>
                           👥 {selectedBeacon.peopleCount} {selectedBeacon.peopleCount > 1 ? 'víctimas' : 'víctima'}
                         </Text>
                       </View>
 
                       <View style={modalStyles.infoRow}>
                         <Text style={modalStyles.infoLabel}>Código de baliza:</Text>
-                        <Text style={[modalStyles.infoValue, { fontFamily: 'monospace', color: '#38BDF8' }]}>
+                        <Text style={[modalStyles.infoValue, { fontFamily: 'monospace', color: theme.isDark ? '#38BDF8' : theme.primary }]}>
                           #{selectedBeacon.reportIdShort}
                         </Text>
                       </View>
@@ -1836,11 +1841,11 @@ export default function SincronizarScreen() {
                   </View>
 
                   {/* Indicaciones Clínicas para la Brigada */}
-                  <View style={[modalStyles.card, { borderColor: '#334155', borderWidth: 1 }]}>
-                    <Text style={{ fontSize: 13, fontWeight: '700', color: '#CBD5E1', marginBottom: 4 }}>
+                  <View style={[modalStyles.card, { borderColor: theme.border, borderWidth: 1 }]}>
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: theme.textSecondary, marginBottom: 4 }}>
                       📋 Protocolo Operativo Recomendado:
                     </Text>
-                    <Text style={{ fontSize: 12, color: '#94A3B8', lineHeight: 18 }}>
+                    <Text style={{ fontSize: 12, color: theme.textMuted, lineHeight: 18 }}>
                       {selectedBeacon.priority === 'ROJO'
                         ? 'Víctima en peligro inminente con vía aérea comprometida, respiración >30/min o pulso débil. Prioridad máxima de extracción médica.'
                         : selectedBeacon.priority === 'AMARILLO'
@@ -1854,15 +1859,15 @@ export default function SincronizarScreen() {
                   {/* Botones de Acción */}
                   <View style={{ marginTop: 14, gap: 10, marginBottom: 25 }}>
                     <TouchableOpacity
-                      style={[modalStyles.actionButton, { backgroundColor: '#3B82F6' }]}
+                      style={[modalStyles.actionButton, { backgroundColor: theme.primary }]}
                       onPress={() => handleDownloadFullReportFromBeacon(selectedBeacon)}
                       disabled={isDownloadingBeaconReport}
                       activeOpacity={0.8}
                     >
                       {isDownloadingBeaconReport ? (
-                        <ActivityIndicator color="#F8FAFC" />
+                        <ActivityIndicator color="#FFFFFF" />
                       ) : (
-                        <Ionicons name="cloud-download" size={20} color="#F8FAFC" />
+                        <Ionicons name="cloud-download" size={20} color="#FFFFFF" />
                       )}
                       <Text style={modalStyles.actionButtonText}>
                         {isDownloadingBeaconReport
@@ -1872,22 +1877,22 @@ export default function SincronizarScreen() {
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                      style={[modalStyles.actionButton, { backgroundColor: '#16A34A' }]}
+                      style={[modalStyles.actionButton, { backgroundColor: theme.success }]}
                       onPress={() => handleSaveBeaconToDatabase(selectedBeacon)}
                       activeOpacity={0.8}
                     >
-                      <Ionicons name="save" size={20} color="#F8FAFC" />
+                      <Ionicons name="save" size={20} color="#FFFFFF" />
                       <Text style={modalStyles.actionButtonText}>
                         📥 Guardar Ficha de Triaje en SQLite
                       </Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                      style={[modalStyles.actionButton, { backgroundColor: '#334155' }]}
+                      style={[modalStyles.actionButton, { backgroundColor: theme.isDark ? '#334155' : '#E2E8F0' }]}
                       onPress={() => setIsBeaconDetailModalOpen(false)}
                       activeOpacity={0.8}
                     >
-                      <Text style={[modalStyles.actionButtonText, { color: '#CBD5E1' }]}>
+                      <Text style={[modalStyles.actionButtonText, { color: theme.isDark ? '#CBD5E1' : '#475569' }]}>
                         Cerrar
                       </Text>
                     </TouchableOpacity>
@@ -1902,315 +1907,317 @@ export default function SincronizarScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0F172A' },
-  scroll: { flex: 1 },
-  scrollContent: { padding: 16 },
-  header: { marginBottom: 16 },
-  title: { fontSize: 24, fontWeight: '800', color: '#F8FAFC' },
-  subtitle: { fontSize: 13, color: '#94A3B8', marginTop: 4 },
-  transportContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#1E293B',
-    borderRadius: 12,
-    padding: 4,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  transportButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 10,
-    borderRadius: 8,
-    gap: 8,
-  },
-  transportButtonActive: {
-    backgroundColor: '#3B82F6',
-  },
-  transportButtonText: {
-    color: '#94A3B8',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  transportButtonTextActive: {
-    color: '#F8FAFC',
-    fontWeight: '700',
-  },
-  statsRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 16,
-  },
-  statBox: {
-    flex: 1,
-    backgroundColor: '#1E293B',
-    borderRadius: 12,
-    padding: 12,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  statNum: { fontSize: 18, fontWeight: '800', color: '#F8FAFC', marginTop: 4 },
-  statLabel: { fontSize: 11, color: '#94A3B8', marginTop: 2 },
-  card: {
-    backgroundColor: '#1E293B',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  cardHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  cardTitle: { fontSize: 15, fontWeight: '700', color: '#F8FAFC', marginBottom: 4 },
-  cardDesc: { fontSize: 12, color: '#94A3B8', marginBottom: 12, lineHeight: 16 },
-  input: {
-    backgroundColor: '#0F172A',
-    borderRadius: 8,
-    padding: 12,
-    color: '#F8FAFC',
-    fontSize: 14,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  mainButton: {
-    backgroundColor: '#3B82F6',
-    borderRadius: 10,
-    padding: 14,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 12,
-  },
-  beaconMainButton: {
-    backgroundColor: '#DC2626',
-    borderWidth: 1,
-    borderColor: '#EF4444',
-  },
-  beaconActiveCard: {
-    backgroundColor: '#1E293B',
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: '#EF4444',
-    padding: 16,
-    shadowColor: '#EF4444',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 4,
-  },
-  beaconHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 14,
-  },
-  beaconRadarCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#0F172A',
-    borderWidth: 2,
-    borderColor: '#EF4444',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  beaconTitleText: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#F8FAFC',
-  },
-  beaconStatusText: {
-    fontSize: 12,
-    color: '#94A3B8',
-    marginTop: 3,
-    lineHeight: 16,
-  },
-  stopBeaconButton: {
-    backgroundColor: '#7F1D1D',
-    borderColor: '#EF4444',
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  stopBeaconButtonText: {
-    color: '#F8FAFC',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  simulateAckButton: {
-    backgroundColor: '#064E3B',
-    borderColor: '#059669',
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingVertical: 11,
-    paddingHorizontal: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    marginTop: 10,
-  },
-  simulateAckButtonText: {
-    color: '#34D399',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  mainButtonDanger: { backgroundColor: '#EF4444' },
-  mainButtonDisabled: { backgroundColor: '#334155' },
-  mainButtonText: { color: '#F8FAFC', fontSize: 14, fontWeight: '700' },
-  secondaryButton: {
-    backgroundColor: 'transparent',
-    borderRadius: 10,
-    padding: 12,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 8,
-    borderWidth: 1,
-    borderColor: '#3B82F6',
-  },
-  secondaryButtonText: { color: '#3B82F6', fontSize: 14, fontWeight: '600' },
-  statusDot: { width: 12, height: 12, borderRadius: 6 },
-  nodeItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#0F172A',
-    borderRadius: 8,
-    padding: 10,
-    marginTop: 6,
-  },
-  nodeCallsign: { color: '#F8FAFC', fontSize: 13, fontWeight: '600' },
-  nodeMeta: { color: '#94A3B8', fontSize: 11, marginTop: 2 },
-  emptyContainer: { alignItems: 'center', paddingVertical: 16 },
-  emptyText: { color: '#94A3B8', fontSize: 13, marginTop: 6, textAlign: 'center' },
-  reportItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#0F172A',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  reportItemSelected: {
-    borderColor: '#3B82F6',
-    backgroundColor: '#1E293B',
-  },
-  reportSummary: { color: '#F8FAFC', fontSize: 13, fontWeight: '500' },
-  reportMeta: { color: '#94A3B8', fontSize: 11, marginTop: 4 },
-  progressContainer: { marginTop: 12 },
-  progressBar: {
-    height: 4,
-    backgroundColor: '#3B82F6',
-    borderRadius: 2,
-    marginBottom: 6,
-  },
-  progressText: { color: '#3B82F6', fontSize: 12, fontStyle: 'italic' },
-  logEmpty: { color: '#64748B', fontSize: 12, fontStyle: 'italic', paddingVertical: 8 },
-  logRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: '#334155',
-    paddingVertical: 8,
-  },
-  logTitle: { color: '#F8FAFC', fontSize: 12, fontFamily: 'monospace' },
-  logMeta: { color: '#94A3B8', fontSize: 10, marginTop: 2 },
-});
+const createStyles = (theme: ThemeColors) =>
+  StyleSheet.create({
+    container: { flex: 1, backgroundColor: theme.background },
+    scroll: { flex: 1 },
+    scrollContent: { padding: 16 },
+    header: { marginBottom: 16 },
+    title: { fontSize: 24, fontWeight: '800', color: theme.text },
+    subtitle: { fontSize: 13, color: theme.textMuted, marginTop: 4 },
+    transportContainer: {
+      flexDirection: 'row',
+      backgroundColor: theme.card,
+      borderRadius: 12,
+      padding: 4,
+      marginBottom: 16,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    transportButton: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 10,
+      borderRadius: 8,
+      gap: 8,
+    },
+    transportButtonActive: {
+      backgroundColor: theme.primary,
+    },
+    transportButtonText: {
+      color: theme.textMuted,
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    transportButtonTextActive: {
+      color: '#FFFFFF',
+      fontWeight: '700',
+    },
+    statsRow: {
+      flexDirection: 'row',
+      gap: 8,
+      marginBottom: 16,
+    },
+    statBox: {
+      flex: 1,
+      backgroundColor: theme.card,
+      borderRadius: 12,
+      padding: 12,
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    statNum: { fontSize: 18, fontWeight: '800', color: theme.text, marginTop: 4 },
+    statLabel: { fontSize: 11, color: theme.textMuted, marginTop: 2 },
+    card: {
+      backgroundColor: theme.card,
+      borderRadius: 12,
+      padding: 16,
+      marginBottom: 16,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    cardHeaderRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    cardTitle: { fontSize: 15, fontWeight: '700', color: theme.text, marginBottom: 4 },
+    cardDesc: { fontSize: 12, color: theme.textMuted, marginBottom: 12, lineHeight: 16 },
+    input: {
+      backgroundColor: theme.cardInner,
+      borderRadius: 8,
+      padding: 12,
+      color: theme.text,
+      fontSize: 14,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    mainButton: {
+      backgroundColor: theme.primary,
+      borderRadius: 10,
+      padding: 14,
+      flexDirection: 'row',
+      justifyContent: 'center',
+      alignItems: 'center',
+      gap: 8,
+      marginTop: 12,
+    },
+    beaconMainButton: {
+      backgroundColor: theme.danger,
+      borderWidth: 1,
+      borderColor: '#EF4444',
+    },
+    beaconActiveCard: {
+      backgroundColor: theme.card,
+      borderRadius: 12,
+      borderWidth: 2,
+      borderColor: theme.danger,
+      padding: 16,
+      shadowColor: theme.danger,
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.3,
+      shadowRadius: 6,
+      elevation: 4,
+    },
+    beaconHeaderRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 14,
+    },
+    beaconRadarCircle: {
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      backgroundColor: theme.cardInner,
+      borderWidth: 2,
+      borderColor: theme.danger,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    beaconTitleText: {
+      fontSize: 15,
+      fontWeight: '800',
+      color: theme.text,
+    },
+    beaconStatusText: {
+      fontSize: 12,
+      color: theme.textMuted,
+      marginTop: 3,
+      lineHeight: 16,
+    },
+    stopBeaconButton: {
+      backgroundColor: theme.isDark ? '#7F1D1D' : '#FEE2E2',
+      borderColor: theme.danger,
+      borderWidth: 1,
+      borderRadius: 10,
+      paddingVertical: 12,
+      paddingHorizontal: 14,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+    },
+    stopBeaconButtonText: {
+      color: theme.isDark ? '#F8FAFC' : '#991B1B',
+      fontSize: 14,
+      fontWeight: '700',
+    },
+    simulateAckButton: {
+      backgroundColor: theme.isDark ? '#064E3B' : '#D1FAE5',
+      borderColor: theme.success,
+      borderWidth: 1,
+      borderRadius: 10,
+      paddingVertical: 11,
+      paddingHorizontal: 14,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      marginTop: 10,
+    },
+    simulateAckButtonText: {
+      color: theme.isDark ? '#34D399' : '#065F46',
+      fontSize: 13,
+      fontWeight: '700',
+    },
+    mainButtonDanger: { backgroundColor: theme.danger },
+    mainButtonDisabled: { backgroundColor: theme.isDark ? '#334155' : '#CBD5E1' },
+    mainButtonText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
+    secondaryButton: {
+      backgroundColor: 'transparent',
+      borderRadius: 10,
+      padding: 12,
+      flexDirection: 'row',
+      justifyContent: 'center',
+      alignItems: 'center',
+      gap: 8,
+      marginTop: 8,
+      borderWidth: 1,
+      borderColor: theme.primary,
+    },
+    secondaryButtonText: { color: theme.primary, fontSize: 14, fontWeight: '600' },
+    statusDot: { width: 12, height: 12, borderRadius: 6 },
+    nodeItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: theme.cardInner,
+      borderRadius: 8,
+      padding: 10,
+      marginTop: 6,
+    },
+    nodeCallsign: { color: theme.text, fontSize: 13, fontWeight: '600' },
+    nodeMeta: { color: theme.textMuted, fontSize: 11, marginTop: 2 },
+    emptyContainer: { alignItems: 'center', paddingVertical: 16 },
+    emptyText: { color: theme.textMuted, fontSize: 13, marginTop: 6, textAlign: 'center' },
+    reportItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: theme.cardInner,
+      borderRadius: 8,
+      padding: 12,
+      marginBottom: 8,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    reportItemSelected: {
+      borderColor: theme.primary,
+      backgroundColor: theme.isDark ? '#1E293B' : '#EFF6FF',
+    },
+    reportSummary: { color: theme.text, fontSize: 13, fontWeight: '500' },
+    reportMeta: { color: theme.textMuted, fontSize: 11, marginTop: 4 },
+    progressContainer: { marginTop: 12 },
+    progressBar: {
+      height: 4,
+      backgroundColor: theme.primary,
+      borderRadius: 2,
+      marginBottom: 6,
+    },
+    progressText: { color: theme.primary, fontSize: 12, fontStyle: 'italic' },
+    logEmpty: { color: theme.textMuted, fontSize: 12, fontStyle: 'italic', paddingVertical: 8 },
+    logRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderBottomWidth: 1,
+      borderBottomColor: theme.border,
+      paddingVertical: 8,
+    },
+    logTitle: { color: theme.text, fontSize: 12, fontFamily: 'monospace' },
+    logMeta: { color: theme.textMuted, fontSize: 10, marginTop: 2 },
+  });
 
-const modalStyles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.75)',
-    justifyContent: 'flex-end',
-  },
-  container: {
-    backgroundColor: '#0F172A',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: '88%',
-    overflow: 'hidden',
-  },
-  header: {
-    padding: 16,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  headerTitle: {
-    color: '#F8FAFC',
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  headerSubtitle: {
-    color: '#F1F5F9',
-    fontSize: 11,
-    fontWeight: '600',
-    marginTop: 2,
-  },
-  closeBtn: {
-    padding: 4,
-  },
-  bodyContent: {
-    padding: 16,
-  },
-  card: {
-    backgroundColor: '#1E293B',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  cardTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#F8FAFC',
-  },
-  distanceBig: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#38BDF8',
-  },
-  infoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  infoLabel: {
-    fontSize: 12,
-    color: '#94A3B8',
-  },
-  infoValue: {
-    fontSize: 12,
-    color: '#E2E8F0',
-  },
-  actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 13,
-    paddingHorizontal: 16,
-    borderRadius: 10,
-  },
-  actionButtonText: {
-    color: '#F8FAFC',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-});
+const createModalStyles = (theme: ThemeColors) =>
+  StyleSheet.create({
+    overlay: {
+      flex: 1,
+      backgroundColor: theme.modalOverlay,
+      justifyContent: 'flex-end',
+    },
+    container: {
+      backgroundColor: theme.background,
+      borderTopLeftRadius: 20,
+      borderTopRightRadius: 20,
+      maxHeight: '88%',
+      overflow: 'hidden',
+    },
+    header: {
+      padding: 16,
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    headerTitle: {
+      color: '#FFFFFF',
+      fontSize: 16,
+      fontWeight: '800',
+    },
+    headerSubtitle: {
+      color: '#F1F5F9',
+      fontSize: 11,
+      fontWeight: '600',
+      marginTop: 2,
+    },
+    closeBtn: {
+      padding: 4,
+    },
+    bodyContent: {
+      padding: 16,
+    },
+    card: {
+      backgroundColor: theme.card,
+      borderRadius: 12,
+      padding: 14,
+      marginBottom: 12,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    cardTitle: {
+      fontSize: 14,
+      fontWeight: '700',
+      color: theme.text,
+    },
+    distanceBig: {
+      fontSize: 18,
+      fontWeight: '800',
+      color: theme.info,
+    },
+    infoRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    infoLabel: {
+      fontSize: 12,
+      color: theme.textMuted,
+    },
+    infoValue: {
+      fontSize: 12,
+      color: theme.textSecondary,
+    },
+    actionButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      paddingVertical: 13,
+      paddingHorizontal: 16,
+      borderRadius: 10,
+    },
+    actionButtonText: {
+      color: '#FFFFFF',
+      fontSize: 14,
+      fontWeight: '700',
+    },
+  });

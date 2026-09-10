@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -18,14 +18,9 @@ import {
   getReportsByPriority,
   searchReports,
 } from '../../src/services/reportService';
+import { useTheme } from '../../src/context/ThemeContext';
+import { PRIORITY_COLORS, type ThemeColors } from '../../src/constants/theme';
 import type { ReportRecord, StartPriority, ReportStatus } from '../../src/types/triageTypes';
-
-const PRIORITY_COLORS: Record<StartPriority, string> = {
-  ROJO: '#EF4444',
-  AMARILLO: '#F59E0B',
-  VERDE: '#22C55E',
-  NEGRO: '#1F2937',
-};
 
 const STATUS_LABELS: Record<string, string> = {
   borrador: 'Borrador',
@@ -41,6 +36,8 @@ type FilterType = 'all' | StartPriority | ReportStatus;
 export default function HistorialScreen() {
   const db = useSQLiteContext();
   const router = useRouter();
+  const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const [reports, setReports] = useState<ReportRecord[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -85,15 +82,15 @@ export default function HistorialScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.headerContainer}>
-        <Text style={styles.title}>📋 Historial de Reportes</Text>
+        <Text style={styles.title}>Historial de Reportes</Text>
 
         {/* Búsqueda */}
         <View style={styles.searchContainer}>
-          <Ionicons name="search" size={18} color="#94A3B8" />
+          <Ionicons name="search" size={18} color={theme.textMuted} />
           <TextInput
             style={styles.searchInput}
             placeholder="Buscar en resúmenes..."
-            placeholderTextColor="#64748B"
+            placeholderTextColor={theme.textPlaceholder}
             value={searchQuery}
             onChangeText={setSearchQuery}
             onSubmitEditing={loadReports}
@@ -101,7 +98,7 @@ export default function HistorialScreen() {
           />
           {searchQuery.length > 0 && (
             <TouchableOpacity onPress={() => { setSearchQuery(''); }}>
-              <Ionicons name="close-circle" size={18} color="#94A3B8" />
+              <Ionicons name="close-circle" size={18} color={theme.textMuted} />
             </TouchableOpacity>
           )}
         </View>
@@ -133,11 +130,11 @@ export default function HistorialScreen() {
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#3B82F6" />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}
       >
         {reports.length === 0 ? (
           <View style={styles.emptyCard}>
-            <Ionicons name="document-text-outline" size={48} color="#94A3B8" />
+            <Ionicons name="document-text-outline" size={48} color={theme.textMuted} />
             <Text style={styles.emptyText}>Sin reportes</Text>
             <Text style={styles.emptySubtext}>
               {searchQuery ? 'No se encontraron resultados' : 'Los reportes que crees aparecerán aquí'}
@@ -197,61 +194,69 @@ export default function HistorialScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0F172A' },
-  headerContainer: { paddingHorizontal: 16, paddingTop: 16 },
-  title: { fontSize: 22, fontWeight: '800', color: '#F8FAFC', marginBottom: 12 },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1E293B',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    height: 42,
-    marginBottom: 12,
-  },
-  searchInput: { flex: 1, color: '#F8FAFC', fontSize: 14, marginLeft: 8 },
-  filterScroll: { marginBottom: 8 },
-  filterChip: {
-    backgroundColor: '#1E293B',
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 16,
-    marginRight: 8,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  filterChipActive: { backgroundColor: '#3B82F6', borderColor: '#3B82F6' },
-  filterChipText: { color: '#94A3B8', fontSize: 13, fontWeight: '600' },
-  filterChipTextActive: { color: '#F8FAFC' },
-  scroll: { flex: 1 },
-  scrollContent: { padding: 16, paddingTop: 8 },
-  resultCount: { fontSize: 12, color: '#64748B', marginBottom: 8 },
-  card: {
-    backgroundColor: '#1E293B',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 10,
-  },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  priorityBadge: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 8 },
-  priorityText: { color: '#F8FAFC', fontSize: 11, fontWeight: '800' },
-  cardMeta: { alignItems: 'flex-end' },
-  cardDate: { fontSize: 11, color: '#94A3B8' },
-  statusBadge: { backgroundColor: '#334155', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, marginTop: 2 },
-  statusText: { color: '#94A3B8', fontSize: 9, fontWeight: '600' },
-  cardSummary: { fontSize: 14, color: '#F8FAFC', lineHeight: 20, marginBottom: 8 },
-  cardFooter: { flexDirection: 'row', gap: 12 },
-  cardLocation: { fontSize: 11, color: '#94A3B8' },
-  cardPeople: { fontSize: 11, color: '#94A3B8' },
-  cardReceived: { fontSize: 11, color: '#3B82F6' },
-  emptyCard: {
-    backgroundColor: '#1E293B',
-    borderRadius: 12,
-    padding: 40,
-    alignItems: 'center',
-    marginTop: 20,
-  },
-  emptyText: { fontSize: 16, color: '#94A3B8', marginTop: 12 },
-  emptySubtext: { fontSize: 13, color: '#64748B', marginTop: 4, textAlign: 'center' },
-});
+function createStyles(theme: ThemeColors) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: theme.background },
+    headerContainer: { paddingHorizontal: 16, paddingTop: 16 },
+    title: { fontSize: 22, fontWeight: '800', color: theme.text, marginBottom: 12 },
+    searchContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: theme.card,
+      borderRadius: 10,
+      paddingHorizontal: 12,
+      height: 42,
+      marginBottom: 12,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    searchInput: { flex: 1, color: theme.text, fontSize: 14, marginLeft: 8 },
+    filterScroll: { marginBottom: 8 },
+    filterChip: {
+      backgroundColor: theme.card,
+      paddingHorizontal: 14,
+      paddingVertical: 6,
+      borderRadius: 16,
+      marginRight: 8,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    filterChipActive: { backgroundColor: theme.primary, borderColor: theme.primary },
+    filterChipText: { color: theme.textMuted, fontSize: 13, fontWeight: '600' },
+    filterChipTextActive: { color: '#FFFFFF' },
+    scroll: { flex: 1 },
+    scrollContent: { padding: 16, paddingTop: 8 },
+    resultCount: { fontSize: 12, color: theme.textMuted, marginBottom: 8 },
+    card: {
+      backgroundColor: theme.card,
+      borderRadius: 12,
+      padding: 14,
+      marginBottom: 10,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+    priorityBadge: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 8 },
+    priorityText: { color: '#FFFFFF', fontSize: 11, fontWeight: '800' },
+    cardMeta: { alignItems: 'flex-end' },
+    cardDate: { fontSize: 11, color: theme.textMuted },
+    statusBadge: { backgroundColor: theme.cardInner, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, marginTop: 2, borderWidth: 1, borderColor: theme.border },
+    statusText: { color: theme.textMuted, fontSize: 9, fontWeight: '600' },
+    cardSummary: { fontSize: 14, color: theme.text, lineHeight: 20, marginBottom: 8 },
+    cardFooter: { flexDirection: 'row', gap: 12 },
+    cardLocation: { fontSize: 11, color: theme.textMuted },
+    cardPeople: { fontSize: 11, color: theme.textMuted },
+    cardReceived: { fontSize: 11, color: theme.primary },
+    emptyCard: {
+      backgroundColor: theme.card,
+      borderRadius: 12,
+      padding: 40,
+      alignItems: 'center',
+      marginTop: 20,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    emptyText: { fontSize: 16, color: theme.textMuted, marginTop: 12 },
+    emptySubtext: { fontSize: 13, color: theme.textPlaceholder, marginTop: 4, textAlign: 'center' },
+  });
+}

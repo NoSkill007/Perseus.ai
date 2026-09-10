@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -18,6 +18,8 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { saveProfile } from '../src/services/profileService';
+import { useTheme } from '../src/context/ThemeContext';
+import type { ThemeColors } from '../src/constants/theme';
 import type { UserProfile, AppRole, Sex, BloodType } from '../src/types/triageTypes';
 
 const PROVINCIAS: string[] = [
@@ -40,6 +42,8 @@ const BLOOD_TYPES: BloodType[] = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O
 export default function OnboardingScreen() {
   const db = useSQLiteContext();
   const router = useRouter();
+  const { theme, isDark } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
 
   // Paso actual (1: Datos Personales, 2: Rol)
   const [currentStep, setCurrentStep] = useState<1 | 2>(1);
@@ -182,7 +186,7 @@ export default function OnboardingScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="light-content" backgroundColor="#0F172A" />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
       <KeyboardAvoidingView
         style={styles.flexOne}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -196,7 +200,7 @@ export default function OnboardingScreen() {
           <View style={styles.header}>
             <View style={styles.logoRow}>
               <View style={styles.logoBadge}>
-                <Ionicons name="shield-checkmark" size={28} color="#3B82F6" />
+                <Ionicons name="shield-checkmark" size={28} color={theme.primary} />
               </View>
               <View>
                 <Text style={styles.appTitle}>Perseus.ai</Text>
@@ -219,23 +223,27 @@ export default function OnboardingScreen() {
                 <Text style={[styles.stepNumber, currentStep === 1 && styles.stepNumberActive]}>1</Text>
               </View>
               <Text style={[styles.stepTitle, currentStep === 1 && styles.stepTitleActive]}>
-                Datos Personales
+                1. Datos Personales
               </Text>
             </TouchableOpacity>
 
             <View style={styles.stepDivider} />
 
-            <View style={[styles.stepItem, currentStep === 2 && styles.stepItemActive]}>
+            <TouchableOpacity
+              style={[styles.stepItem, currentStep === 2 && styles.stepItemActive]}
+              onPress={handleNextStep}
+              activeOpacity={0.7}
+            >
               <View style={[styles.stepCircle, currentStep === 2 && styles.stepCircleActive]}>
                 <Text style={[styles.stepNumber, currentStep === 2 && styles.stepNumberActive]}>2</Text>
               </View>
               <Text style={[styles.stepTitle, currentStep === 2 && styles.stepTitleActive]}>
-                Rol en Emergencia
+                2. Rol en Emergencias
               </Text>
-            </View>
+            </TouchableOpacity>
           </View>
 
-          {/* Banner de Mensaje de Error */}
+          {/* Mensaje de Error si la validación falla */}
           {errorMessage ? (
             <View style={styles.errorBanner}>
               <Ionicons name="alert-circle" size={20} color="#EF4444" style={styles.errorIcon} />
@@ -249,7 +257,7 @@ export default function OnboardingScreen() {
           {currentStep === 1 && (
             <View style={styles.card}>
               <View style={styles.cardHeader}>
-                <Ionicons name="person-circle-outline" size={22} color="#3B82F6" />
+                <Ionicons name="person-circle-outline" size={22} color={theme.primary} />
                 <Text style={styles.cardTitle}>Paso 1: Información Personal</Text>
               </View>
               <Text style={styles.cardHelperText}>
@@ -264,7 +272,7 @@ export default function OnboardingScreen() {
                 <TextInput
                   style={styles.textInput}
                   placeholder="Ej: Juan Pérez Morales"
-                  placeholderTextColor="#64748B"
+                  placeholderTextColor={theme.textPlaceholder}
                   value={fullName}
                   onChangeText={setFullName}
                   autoCapitalize="words"
@@ -280,7 +288,7 @@ export default function OnboardingScreen() {
                   <TextInput
                     style={styles.textInput}
                     placeholder="Ej: 32"
-                    placeholderTextColor="#64748B"
+                    placeholderTextColor={theme.textPlaceholder}
                     value={age}
                     onChangeText={setAge}
                     keyboardType="numeric"
@@ -331,7 +339,7 @@ export default function OnboardingScreen() {
                 <TextInput
                   style={styles.textInput}
                   placeholder="Ej: +507 6123-4567"
-                  placeholderTextColor="#64748B"
+                  placeholderTextColor={theme.textPlaceholder}
                   value={phone}
                   onChangeText={setPhone}
                   keyboardType="phone-pad"
@@ -352,14 +360,14 @@ export default function OnboardingScreen() {
                     <Ionicons
                       name="location-outline"
                       size={18}
-                      color={province ? '#3B82F6' : '#64748B'}
+                      color={province ? theme.primary : theme.textMuted}
                       style={styles.inputIcon}
                     />
                     <Text style={province ? styles.pickerSelectedText : styles.pickerPlaceholderText}>
                       {province || 'Selecciona tu provincia o comarca...'}
                     </Text>
                   </View>
-                  <Ionicons name="chevron-down" size={18} color="#94A3B8" />
+                  <Ionicons name="chevron-down" size={18} color={theme.textMuted} />
                 </TouchableOpacity>
               </View>
 
@@ -369,7 +377,7 @@ export default function OnboardingScreen() {
                 <TextInput
                   style={styles.textArea}
                   placeholder="Ej: Calle Principal, Casa #14, Barriada Santa María"
-                  placeholderTextColor="#64748B"
+                  placeholderTextColor={theme.textPlaceholder}
                   value={address}
                   onChangeText={setAddress}
                   multiline
@@ -415,8 +423,8 @@ export default function OnboardingScreen() {
                 <Switch
                   value={hasDisability}
                   onValueChange={setHasDisability}
-                  trackColor={{ false: '#334155', true: '#2563EB' }}
-                  thumbColor={hasDisability ? '#F8FAFC' : '#94A3B8'}
+                  trackColor={{ false: theme.border, true: theme.primary }}
+                  thumbColor={hasDisability ? '#FFFFFF' : theme.textMuted}
                 />
               </View>
 
@@ -429,7 +437,7 @@ export default function OnboardingScreen() {
                   <TextInput
                     style={styles.textInput}
                     placeholder="Ej: Movilidad reducida (silla de ruedas), sordera..."
-                    placeholderTextColor="#64748B"
+                    placeholderTextColor={theme.textPlaceholder}
                     value={disabilityDescription}
                     onChangeText={setDisabilityDescription}
                   />
@@ -442,7 +450,7 @@ export default function OnboardingScreen() {
                 <TextInput
                   style={styles.textArea}
                   placeholder="Ej: Hipertensión arterial, diabetes tipo 2, asma, alérgico a penicilina..."
-                  placeholderTextColor="#64748B"
+                  placeholderTextColor={theme.textPlaceholder}
                   value={medicalConditions}
                   onChangeText={setMedicalConditions}
                   multiline
@@ -452,7 +460,7 @@ export default function OnboardingScreen() {
 
               {/* Contacto de Emergencia */}
               <View style={styles.subSectionHeader}>
-                <Ionicons name="call-outline" size={18} color="#3B82F6" />
+                <Ionicons name="call-outline" size={18} color={theme.primary} />
                 <Text style={styles.subSectionTitle}>Contacto de Emergencia (Opcional)</Text>
               </View>
 
@@ -461,7 +469,7 @@ export default function OnboardingScreen() {
                 <TextInput
                   style={styles.textInput}
                   placeholder="Ej: María González (Familiar)"
-                  placeholderTextColor="#64748B"
+                  placeholderTextColor={theme.textPlaceholder}
                   value={emergencyContactName}
                   onChangeText={setEmergencyContactName}
                 />
@@ -472,7 +480,7 @@ export default function OnboardingScreen() {
                 <TextInput
                   style={styles.textInput}
                   placeholder="Ej: +507 6999-8888"
-                  placeholderTextColor="#64748B"
+                  placeholderTextColor={theme.textPlaceholder}
                   value={emergencyContactPhone}
                   onChangeText={setEmergencyContactPhone}
                   keyboardType="phone-pad"
@@ -497,7 +505,7 @@ export default function OnboardingScreen() {
           {currentStep === 2 && (
             <View style={styles.card}>
               <View style={styles.cardHeader}>
-                <Ionicons name="people-outline" size={22} color="#3B82F6" />
+                <Ionicons name="people-outline" size={22} color={theme.primary} />
                 <Text style={styles.cardTitle}>Paso 2: ¿Cuál es tu rol principal?</Text>
               </View>
               <Text style={styles.cardHelperText}>
@@ -574,15 +582,15 @@ export default function OnboardingScreen() {
 
                 <View style={styles.roleHighlightsContainer}>
                   <View style={styles.highlightItem}>
-                    <Ionicons name="checkmark-circle" size={16} color="#3B82F6" />
+                    <Ionicons name="checkmark-circle" size={16} color={theme.primary} />
                     <Text style={styles.highlightText}>Recepción y consolidación de reportes P2P</Text>
                   </View>
                   <View style={styles.highlightItem}>
-                    <Ionicons name="checkmark-circle" size={16} color="#3B82F6" />
+                    <Ionicons name="checkmark-circle" size={16} color={theme.primary} />
                     <Text style={styles.highlightText}>Triaje START (Rojo, Amarillo, Verde, Negro)</Text>
                   </View>
                   <View style={styles.highlightItem}>
-                    <Ionicons name="checkmark-circle" size={16} color="#3B82F6" />
+                    <Ionicons name="checkmark-circle" size={16} color={theme.primary} />
                     <Text style={styles.highlightText}>Coordinación operativa y atención de víctimas</Text>
                   </View>
                 </View>
@@ -596,7 +604,7 @@ export default function OnboardingScreen() {
                   disabled={isSaving}
                   activeOpacity={0.85}
                 >
-                  <Ionicons name="arrow-back" size={18} color="#CBD5E1" />
+                  <Ionicons name="arrow-back" size={18} color={theme.text} />
                   <Text style={styles.secondaryActionText}>Atrás</Text>
                 </TouchableOpacity>
 
@@ -633,14 +641,14 @@ export default function OnboardingScreen() {
               <View style={styles.modalContent}>
                 <View style={styles.modalHeader}>
                   <View style={styles.modalTitleRow}>
-                    <Ionicons name="map" size={20} color="#3B82F6" />
+                    <Ionicons name="map" size={20} color={theme.primary} />
                     <Text style={styles.modalTitle}>Selecciona tu Provincia</Text>
                   </View>
                   <TouchableOpacity
                     style={styles.modalCloseButton}
                     onPress={() => setIsProvinceModalVisible(false)}
                   >
-                    <Ionicons name="close" size={20} color="#94A3B8" />
+                    <Ionicons name="close" size={20} color={theme.textMuted} />
                   </TouchableOpacity>
                 </View>
 
@@ -663,7 +671,7 @@ export default function OnboardingScreen() {
                           {prov}
                         </Text>
                         {isSelected && (
-                          <Ionicons name="checkmark" size={18} color="#3B82F6" />
+                          <Ionicons name="checkmark" size={18} color={theme.primary} />
                         )}
                       </TouchableOpacity>
                     );
@@ -678,533 +686,534 @@ export default function OnboardingScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#0F172A',
-  },
-  flexOne: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 40,
-  },
-  header: {
-    marginBottom: 20,
-    marginTop: 4,
-  },
-  logoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  logoBadge: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: '#1E293B',
-    borderColor: '#334155',
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  appTitle: {
-    fontSize: 26,
-    fontWeight: '800',
-    color: '#F8FAFC',
-    letterSpacing: 0.5,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#94A3B8',
-    fontWeight: '500',
-  },
-  headerDescription: {
-    fontSize: 13,
-    color: '#94A3B8',
-    lineHeight: 18,
-    marginTop: 4,
-  },
-  stepIndicatorContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1E293B',
-    borderRadius: 12,
-    borderColor: '#334155',
-    borderWidth: 1,
-    padding: 8,
-    marginBottom: 16,
-  },
-  stepItem: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 6,
-    paddingHorizontal: 8,
-    borderRadius: 8,
-  },
-  stepItemActive: {
-    backgroundColor: '#0F172A',
-  },
-  stepCircle: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#334155',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 8,
-  },
-  stepCircleActive: {
-    backgroundColor: '#3B82F6',
-  },
-  stepNumber: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#94A3B8',
-  },
-  stepNumberActive: {
-    color: '#FFFFFF',
-  },
-  stepTitle: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#64748B',
-  },
-  stepTitleActive: {
-    color: '#F8FAFC',
-    fontWeight: '700',
-  },
-  stepDivider: {
-    width: 1,
-    height: 20,
-    backgroundColor: '#334155',
-    marginHorizontal: 4,
-  },
-  errorBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#451A1A',
-    borderColor: '#EF4444',
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 16,
-  },
-  errorIcon: {
-    marginRight: 8,
-  },
-  errorBannerText: {
-    color: '#FCA5A5',
-    fontSize: 13,
-    fontWeight: '600',
-    flex: 1,
-    lineHeight: 18,
-  },
-  card: {
-    backgroundColor: '#1E293B',
-    borderRadius: 14,
-    borderColor: '#334155',
-    borderWidth: 1,
-    padding: 18,
-    marginBottom: 24,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 6,
-    gap: 8,
-  },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#F8FAFC',
-  },
-  cardHelperText: {
-    fontSize: 13,
-    color: '#94A3B8',
-    marginBottom: 18,
-    lineHeight: 18,
-  },
-  fieldGroup: {
-    marginBottom: 14,
-  },
-  twoColumnRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 14,
-  },
-  halfColumn: {
-    flex: 1,
-  },
-  label: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#CBD5E1',
-    marginBottom: 6,
-  },
-  labelWithBadgeRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  clearSelectionText: {
-    fontSize: 12,
-    color: '#38BDF8',
-    fontWeight: '500',
-  },
-  requiredAsterisk: {
-    color: '#EF4444',
-    fontWeight: '700',
-  },
-  textInput: {
-    backgroundColor: '#0F172A',
-    borderColor: '#334155',
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
-    color: '#F8FAFC',
-  },
-  textArea: {
-    backgroundColor: '#0F172A',
-    borderColor: '#334155',
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
-    color: '#F8FAFC',
-    minHeight: 64,
-    textAlignVertical: 'top',
-  },
-  sexButtonsContainer: {
-    flexDirection: 'row',
-    gap: 6,
-    height: 44,
-  },
-  sexButton: {
-    flex: 1,
-    backgroundColor: '#0F172A',
-    borderColor: '#334155',
-    borderWidth: 1,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sexButtonActive: {
-    backgroundColor: '#2563EB',
-    borderColor: '#3B82F6',
-  },
-  sexButtonText: {
-    color: '#94A3B8',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  sexButtonTextActive: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-  },
-  pickerSelector: {
-    backgroundColor: '#0F172A',
-    borderColor: '#334155',
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  pickerValueRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  inputIcon: {
-    marginRight: 8,
-  },
-  pickerPlaceholderText: {
-    color: '#64748B',
-    fontSize: 14,
-  },
-  pickerSelectedText: {
-    color: '#F8FAFC',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  chipsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  chipButton: {
-    backgroundColor: '#0F172A',
-    borderColor: '#334155',
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    minWidth: 46,
-    alignItems: 'center',
-  },
-  chipButtonActive: {
-    backgroundColor: '#2563EB',
-    borderColor: '#3B82F6',
-  },
-  chipButtonText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#94A3B8',
-  },
-  chipButtonTextActive: {
-    color: '#FFFFFF',
-  },
-  switchGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#0F172A',
-    borderColor: '#334155',
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 12,
-    marginVertical: 8,
-  },
-  switchTextContainer: {
-    flex: 1,
-    marginRight: 12,
-  },
-  switchLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#F8FAFC',
-    marginBottom: 2,
-  },
-  switchSubLabel: {
-    fontSize: 11,
-    color: '#94A3B8',
-    lineHeight: 15,
-  },
-  conditionalFieldGroup: {
-    backgroundColor: '#0F172A',
-    borderColor: '#334155',
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 14,
-  },
-  subSectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 10,
-    marginBottom: 12,
-    paddingTop: 10,
-    borderTopColor: '#334155',
-    borderTopWidth: 1,
-  },
-  subSectionTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#F8FAFC',
-  },
-  primaryActionButton: {
-    backgroundColor: '#2563EB',
-    borderRadius: 10,
-    paddingVertical: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    marginTop: 14,
-  },
-  primaryActionText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  actionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  loadingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  roleCard: {
-    backgroundColor: '#0F172A',
-    borderColor: '#334155',
-    borderWidth: 1.5,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 14,
-  },
-  roleCardSelected: {
-    borderColor: '#3B82F6',
-    backgroundColor: '#172554',
-  },
-  roleCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  roleIconContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: 10,
-    backgroundColor: '#1E293B',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  roleEmoji: {
-    fontSize: 22,
-  },
-  roleTitleColumn: {
-    flex: 1,
-  },
-  roleCardTitle: {
-    fontSize: 17,
-    fontWeight: '800',
-    color: '#F8FAFC',
-  },
-  roleCardSubtitle: {
-    fontSize: 12,
-    color: '#94A3B8',
-    marginTop: 2,
-  },
-  roleRadioCircle: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderColor: '#3B82F6',
-    borderWidth: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  roleRadioInner: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#3B82F6',
-  },
-  roleDescription: {
-    fontSize: 13,
-    color: '#CBD5E1',
-    lineHeight: 18,
-    marginBottom: 12,
-  },
-  roleHighlightsContainer: {
-    gap: 6,
-    borderTopColor: '#334155',
-    borderTopWidth: 1,
-    paddingTop: 10,
-  },
-  highlightItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  highlightText: {
-    fontSize: 12,
-    color: '#E2E8F0',
-  },
-  step2ButtonsRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 10,
-  },
-  secondaryActionButton: {
-    flex: 1,
-    backgroundColor: '#0F172A',
-    borderColor: '#334155',
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingVertical: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  secondaryActionText: {
-    color: '#CBD5E1',
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  primaryActionButtonStep2: {
-    flex: 2,
-    backgroundColor: '#2563EB',
-    borderRadius: 10,
-    paddingVertical: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  disabledButton: {
-    opacity: 0.6,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.75)',
-    justifyContent: 'center',
-    padding: 20,
-  },
-  modalContent: {
-    backgroundColor: '#1E293B',
-    borderRadius: 14,
-    borderColor: '#334155',
-    borderWidth: 1,
-    maxHeight: '75%',
-    overflow: 'hidden',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    borderBottomColor: '#334155',
-    borderBottomWidth: 1,
-  },
-  modalTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  modalTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#F8FAFC',
-  },
-  modalCloseButton: {
-    padding: 4,
-  },
-  modalScrollView: {
-    padding: 8,
-  },
-  modalItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-  },
-  modalItemSelected: {
-    backgroundColor: '#0F172A',
-  },
-  modalItemText: {
-    fontSize: 14,
-    color: '#CBD5E1',
-  },
-  modalItemTextSelected: {
-    color: '#38BDF8',
-    fontWeight: '700',
-  },
-});
+const createStyles = (theme: ThemeColors) =>
+  StyleSheet.create({
+    safeArea: {
+      flex: 1,
+      backgroundColor: theme.background,
+    },
+    flexOne: {
+      flex: 1,
+    },
+    scrollContent: {
+      padding: 16,
+      paddingBottom: 40,
+    },
+    header: {
+      marginBottom: 20,
+      marginTop: 4,
+    },
+    logoRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 8,
+    },
+    logoBadge: {
+      width: 44,
+      height: 44,
+      borderRadius: 12,
+      backgroundColor: theme.card,
+      borderColor: theme.border,
+      borderWidth: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: 12,
+    },
+    appTitle: {
+      fontSize: 26,
+      fontWeight: '800',
+      color: theme.text,
+      letterSpacing: 0.5,
+    },
+    subtitle: {
+      fontSize: 14,
+      color: theme.textMuted,
+      fontWeight: '500',
+    },
+    headerDescription: {
+      fontSize: 13,
+      color: theme.textMuted,
+      lineHeight: 18,
+      marginTop: 4,
+    },
+    stepIndicatorContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: theme.card,
+      borderRadius: 12,
+      borderColor: theme.border,
+      borderWidth: 1,
+      padding: 8,
+      marginBottom: 16,
+    },
+    stepItem: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 6,
+      paddingHorizontal: 8,
+      borderRadius: 8,
+    },
+    stepItemActive: {
+      backgroundColor: theme.cardInner,
+    },
+    stepCircle: {
+      width: 24,
+      height: 24,
+      borderRadius: 12,
+      backgroundColor: theme.border,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: 8,
+    },
+    stepCircleActive: {
+      backgroundColor: theme.primary,
+    },
+    stepNumber: {
+      fontSize: 12,
+      fontWeight: '700',
+      color: theme.textMuted,
+    },
+    stepNumberActive: {
+      color: '#FFFFFF',
+    },
+    stepTitle: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: theme.textMuted,
+    },
+    stepTitleActive: {
+      color: theme.text,
+      fontWeight: '700',
+    },
+    stepDivider: {
+      width: 1,
+      height: 20,
+      backgroundColor: theme.border,
+      marginHorizontal: 4,
+    },
+    errorBanner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: theme.dangerMuted,
+      borderColor: theme.danger,
+      borderWidth: 1,
+      borderRadius: 8,
+      padding: 12,
+      marginBottom: 16,
+    },
+    errorIcon: {
+      marginRight: 8,
+    },
+    errorBannerText: {
+      color: theme.danger,
+      fontSize: 13,
+      fontWeight: '600',
+      flex: 1,
+      lineHeight: 18,
+    },
+    card: {
+      backgroundColor: theme.card,
+      borderRadius: 14,
+      borderColor: theme.border,
+      borderWidth: 1,
+      padding: 18,
+      marginBottom: 24,
+    },
+    cardHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 6,
+      gap: 8,
+    },
+    cardTitle: {
+      fontSize: 18,
+      fontWeight: '700',
+      color: theme.text,
+    },
+    cardHelperText: {
+      fontSize: 13,
+      color: theme.textMuted,
+      marginBottom: 18,
+      lineHeight: 18,
+    },
+    fieldGroup: {
+      marginBottom: 14,
+    },
+    twoColumnRow: {
+      flexDirection: 'row',
+      gap: 12,
+      marginBottom: 14,
+    },
+    halfColumn: {
+      flex: 1,
+    },
+    label: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: theme.textSecondary,
+      marginBottom: 6,
+    },
+    labelWithBadgeRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 6,
+    },
+    clearSelectionText: {
+      fontSize: 12,
+      color: theme.sky,
+      fontWeight: '500',
+    },
+    requiredAsterisk: {
+      color: theme.danger,
+      fontWeight: '700',
+    },
+    textInput: {
+      backgroundColor: theme.inputBackground,
+      borderColor: theme.inputBorder,
+      borderWidth: 1,
+      borderRadius: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      fontSize: 14,
+      color: theme.text,
+    },
+    textArea: {
+      backgroundColor: theme.inputBackground,
+      borderColor: theme.inputBorder,
+      borderWidth: 1,
+      borderRadius: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      fontSize: 14,
+      color: theme.text,
+      minHeight: 64,
+      textAlignVertical: 'top',
+    },
+    sexButtonsContainer: {
+      flexDirection: 'row',
+      gap: 6,
+      height: 44,
+    },
+    sexButton: {
+      flex: 1,
+      backgroundColor: theme.inputBackground,
+      borderColor: theme.inputBorder,
+      borderWidth: 1,
+      borderRadius: 8,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    sexButtonActive: {
+      backgroundColor: theme.primary,
+      borderColor: theme.primary,
+    },
+    sexButtonText: {
+      color: theme.textMuted,
+      fontSize: 13,
+      fontWeight: '600',
+    },
+    sexButtonTextActive: {
+      color: '#FFFFFF',
+      fontWeight: '700',
+    },
+    pickerSelector: {
+      backgroundColor: theme.inputBackground,
+      borderColor: theme.inputBorder,
+      borderWidth: 1,
+      borderRadius: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 12,
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    pickerValueRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      flex: 1,
+    },
+    inputIcon: {
+      marginRight: 8,
+    },
+    pickerPlaceholderText: {
+      color: theme.textPlaceholder,
+      fontSize: 14,
+    },
+    pickerSelectedText: {
+      color: theme.text,
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    chipsGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
+    },
+    chipButton: {
+      backgroundColor: theme.inputBackground,
+      borderColor: theme.inputBorder,
+      borderWidth: 1,
+      borderRadius: 8,
+      paddingVertical: 8,
+      paddingHorizontal: 14,
+      minWidth: 46,
+      alignItems: 'center',
+    },
+    chipButtonActive: {
+      backgroundColor: theme.primary,
+      borderColor: theme.primary,
+    },
+    chipButtonText: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: theme.textMuted,
+    },
+    chipButtonTextActive: {
+      color: '#FFFFFF',
+    },
+    switchGroup: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      backgroundColor: theme.cardInner,
+      borderColor: theme.border,
+      borderWidth: 1,
+      borderRadius: 8,
+      padding: 12,
+      marginVertical: 8,
+    },
+    switchTextContainer: {
+      flex: 1,
+      marginRight: 12,
+    },
+    switchLabel: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: theme.text,
+      marginBottom: 2,
+    },
+    switchSubLabel: {
+      fontSize: 11,
+      color: theme.textMuted,
+      lineHeight: 15,
+    },
+    conditionalFieldGroup: {
+      backgroundColor: theme.cardInner,
+      borderColor: theme.border,
+      borderWidth: 1,
+      borderRadius: 8,
+      padding: 12,
+      marginBottom: 14,
+    },
+    subSectionHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      marginTop: 10,
+      marginBottom: 12,
+      paddingTop: 10,
+      borderTopColor: theme.border,
+      borderTopWidth: 1,
+    },
+    subSectionTitle: {
+      fontSize: 14,
+      fontWeight: '700',
+      color: theme.text,
+    },
+    primaryActionButton: {
+      backgroundColor: theme.primary,
+      borderRadius: 10,
+      paddingVertical: 14,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      marginTop: 14,
+    },
+    primaryActionText: {
+      color: '#FFFFFF',
+      fontSize: 15,
+      fontWeight: '700',
+    },
+    actionRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    loadingRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    roleCard: {
+      backgroundColor: theme.cardInner,
+      borderColor: theme.border,
+      borderWidth: 1.5,
+      borderRadius: 12,
+      padding: 16,
+      marginBottom: 14,
+    },
+    roleCardSelected: {
+      borderColor: theme.primary,
+      backgroundColor: theme.primaryMuted,
+    },
+    roleCardHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 10,
+    },
+    roleIconContainer: {
+      width: 44,
+      height: 44,
+      borderRadius: 10,
+      backgroundColor: theme.card,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: 12,
+    },
+    roleEmoji: {
+      fontSize: 22,
+    },
+    roleTitleColumn: {
+      flex: 1,
+    },
+    roleCardTitle: {
+      fontSize: 17,
+      fontWeight: '800',
+      color: theme.text,
+    },
+    roleCardSubtitle: {
+      fontSize: 12,
+      color: theme.textMuted,
+      marginTop: 2,
+    },
+    roleRadioCircle: {
+      width: 22,
+      height: 22,
+      borderRadius: 11,
+      borderColor: theme.primary,
+      borderWidth: 2,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    roleRadioInner: {
+      width: 12,
+      height: 12,
+      borderRadius: 6,
+      backgroundColor: theme.primary,
+    },
+    roleDescription: {
+      fontSize: 13,
+      color: theme.textSecondary,
+      lineHeight: 18,
+      marginBottom: 12,
+    },
+    roleHighlightsContainer: {
+      gap: 6,
+      borderTopColor: theme.border,
+      borderTopWidth: 1,
+      paddingTop: 10,
+    },
+    highlightItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    highlightText: {
+      fontSize: 12,
+      color: theme.textSecondary,
+    },
+    step2ButtonsRow: {
+      flexDirection: 'row',
+      gap: 12,
+      marginTop: 10,
+    },
+    secondaryActionButton: {
+      flex: 1,
+      backgroundColor: theme.cardInner,
+      borderColor: theme.border,
+      borderWidth: 1,
+      borderRadius: 10,
+      paddingVertical: 14,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+    },
+    secondaryActionText: {
+      color: theme.textSecondary,
+      fontSize: 15,
+      fontWeight: '600',
+    },
+    primaryActionButtonStep2: {
+      flex: 2,
+      backgroundColor: theme.primary,
+      borderRadius: 10,
+      paddingVertical: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    disabledButton: {
+      opacity: 0.6,
+    },
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: theme.modalOverlay,
+      justifyContent: 'center',
+      padding: 20,
+    },
+    modalContent: {
+      backgroundColor: theme.modalBg,
+      borderRadius: 14,
+      borderColor: theme.border,
+      borderWidth: 1,
+      maxHeight: '75%',
+      overflow: 'hidden',
+    },
+    modalHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      padding: 16,
+      borderBottomColor: theme.border,
+      borderBottomWidth: 1,
+    },
+    modalTitleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    modalTitle: {
+      fontSize: 16,
+      fontWeight: '700',
+      color: theme.text,
+    },
+    modalCloseButton: {
+      padding: 4,
+    },
+    modalScrollView: {
+      padding: 8,
+    },
+    modalItem: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+      borderRadius: 8,
+    },
+    modalItemSelected: {
+      backgroundColor: theme.cardInner,
+    },
+    modalItemText: {
+      fontSize: 14,
+      color: theme.textSecondary,
+    },
+    modalItemTextSelected: {
+      color: theme.primary,
+      fontWeight: '700',
+    },
+  });

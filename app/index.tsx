@@ -3,12 +3,14 @@ import { ActivityIndicator, View, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { hasProfile } from '../src/services/profileService';
+import { useTheme } from '../src/context/ThemeContext';
 
 /**
  * Index — Redirector
  * Si no hay perfil → onboarding, si hay perfil → (tabs)
  */
 export default function Index() {
+  const { theme } = useTheme();
   const db = useSQLiteContext();
   const router = useRouter();
   const [checking, setChecking] = useState(true);
@@ -30,8 +32,8 @@ export default function Index() {
   }, []);
 
   return (
-    <View style={styles.container}>
-      <ActivityIndicator size="large" color="#3B82F6" />
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
+      <ActivityIndicator size="large" color={theme.primary} />
     </View>
   );
 }
@@ -41,6 +43,5 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#0F172A',
   },
 });
