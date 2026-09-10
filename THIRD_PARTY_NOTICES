@@ -1,0 +1,33 @@
+# THIRD-PARTY SOFTWARE NOTICES AND INFORMATION
+
+This project incorporates components from the following open-source software and third-party tools:
+
+1. **QVAC SDK & BareKit**
+   - Repository / Source: https://qvac.tether.io / https://github.com/holepunchto/bare-kit
+   - License: MIT / Apache 2.0 / Holepunch
+   - Description: On-device runtime and model orchestration for React Native.
+
+2. **Whisper (OpenAI / whisper.cpp)**
+   - Source: https://github.com/ggerganov/whisper.cpp
+   - License: MIT
+   - Description: Lightweight Automatic Speech Recognition (ASR) engine for edge devices.
+
+3. **Llama 3.2 1B Instruct (Meta AI)**
+   - Source: https://huggingface.co/meta-llama/Llama-3.2-1B-Instruct
+   - License: Llama 3.2 Community License
+   - Description: Dense lightweight decoder LLM for on-device reasoning and triage extraction.
+
+4. **VisionPsy-Nano (Tether AI Research)**
+   - Source: Tether AI Research
+   - License: Apache 2.0
+   - Description: Compact Vision Transformer for emergency scene classification.
+
+5. **Expo / React Native Framework**
+   - Source: https://github.com/expo/expo / https://github.com/facebook/react-native
+   - License: MIT
+   - Description: Application shell and cross-platform UI components.
+
+6. **expo-sqlite**
+   - Source: https://docs.expo.dev/versions/latest/sdk/sqlite/
+   - License: MIT
+   - Description: Local SQLite engine for persistent offline storage.

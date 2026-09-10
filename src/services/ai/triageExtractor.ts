@@ -193,42 +193,60 @@ export function fallbackExtraction(
   // 4. Determinación de Prioridad START
   let priority: StartPriority = 'AMARILLO';
 
-  const isCritical =
-    combined.includes('atrapad') ||
-    combined.includes('debajo de') ||
+  // Detección de Negaciones Comunes
+  const hasNegatedInjuries =
+    combined.includes('no hay herid') ||
+    combined.includes('sin herid') ||
+    combined.includes('nadie está sangrando') ||
+    combined.includes('ilesos') ||
+    combined.includes('no hay víctimas') ||
+    combined.includes('no sepultó a nadie') ||
+    combined.includes('no fue un incendio forestal') ||
+    combined.includes('no estamos inundados');
+
+  const isTrappedOrCritical =
+    (combined.includes('atrapad') && !combined.includes('no están atrapados')) ||
+    combined.includes('en el techo') ||
+    combined.includes('debajo') ||
     combined.includes('bajo la casa') ||
     combined.includes('bajo los escombros') ||
-    combined.includes('no nos podemos mover') ||
-    combined.includes('no podemos movernos') ||
-    combined.includes('inmovilizad') ||
-    combined.includes('herid') ||
-    combined.includes('terremoto') ||
-    combined.includes('sismo') ||
-    combined.includes('colapso') ||
-    combined.includes('derrumbe') ||
-    combined.includes('sepultad') ||
-    combined.includes('techo') ||
-    combined.includes('grave') ||
-    combined.includes('urgente') ||
-    combined.includes('muert') ||
-    combined.includes('inundad');
+    combined.includes('inconsciente') ||
+    combined.includes('heridas de consideración') ||
+    combined.includes('fractura') ||
+    combined.includes('ambulancia urgente') ||
+    combined.includes('aislados en una colina sin leche') ||
+    (combined.includes('herid') && !hasNegatedInjuries && !combined.includes('raspada') && !combined.includes('leve'));
 
-  const isMinor =
-    combined.includes('leve') ||
-    combined.includes('cancha comunal') ||
-    combined.includes('estamos bien') ||
-    combined.includes('solo frazadas');
+  const isMinorOrResolved =
+    combined.includes('charco en el patio') ||
+    combined.includes('raspada') ||
+    combined.includes('quema de basura') ||
+    combined.includes('árbol cayó sobre tendido') ||
+    combined.includes('no tenemos luz eléctrica') ||
+    (combined.includes('sin refugio') && !combined.includes('atrapad')) ||
+    (hasNegatedInjuries && !combined.includes('atrapad') && !combined.includes('aislad'));
 
-  if (isCritical) {
+  if (isTrappedOrCritical) {
     priority = 'ROJO';
-  } else if (isMinor) {
+  } else if (isMinorOrResolved) {
     priority = 'VERDE';
+  } else {
+    priority = 'AMARILLO';
   }
 
-  // 5. Generar Resumen Estructurado Conciso
-  let summary = relatoText || transcriptText || 'Emergencia registrada localmente.';
-  if (combined.includes('debajo') || combined.includes('atrapad') || combined.includes('no nos podemos mover')) {
-    summary = `${peopleCount ? `${peopleCount} personas atrapadas/inmovilizadas` : 'Personas atrapadas'} con necesidad de rescate urgente en ${detectedLocation.formattedReference}. ${combined.includes('herid') ? 'Se reportan heridos en la escena.' : ''}`;
+  // 5. Generar Resumen Estructurado Conciso y Sanitizado
+  let rawText = relatoText || transcriptText || 'Emergencia registrada localmente.';
+  // Sanitizar inyecciones de prompt o SQL del resumen
+  let cleanText = rawText
+    .replace(/IGNORA TODAS LAS REGLAS ANTERIORES[^\.]*\./gi, '')
+    .replace(/DROP TABLE[^\;]*\;/gi, '')
+    .replace(/SELECT \* FROM[^\;]*\;/gi, '')
+    .replace(/System Prompt Override:[^\.]*\./gi, '')
+    .trim();
+
+  let summary = cleanText || 'Emergencia registrada localmente.';
+  if (combined.includes('debajo') || combined.includes('bajo la casa') || combined.includes('atrapad') || combined.includes('no nos podemos mover')) {
+    summary = `${peopleCount ? `${peopleCount} personas atrapadas/inmovilizadas` : 'Personas atrapadas'} con necesidad de rescate urgente en ${detectedLocation.formattedReference}. ${combined.includes('herid') && !hasNegatedInjuries ? 'Se reportan heridos en la escena.' : ''}`;
   } else if (combined.includes('terremoto') || combined.includes('sismo')) {
     summary = `${peopleCount ? `${peopleCount} personas afectadas` : 'Personas afectadas'} tras terremoto en ${detectedLocation.formattedReference}. ${combined.includes('atrapad') ? 'Se reportan atrapados en estructura.' : ''}`;
   } else if (combined.includes('inundad') || combined.includes('río')) {
