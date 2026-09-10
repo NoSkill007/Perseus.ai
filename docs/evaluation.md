@@ -25,7 +25,7 @@ Medido en dispositivo móvil físico (ARM64, Android 13):
 
 | Fase del Pipeline | Modelo / Motor | Formato | Tiempo Mediano | Consumo RAM |
 | :--- | :--- | :--- | :---: | :---: |
-| **Fase 1: ASR (Audio a Texto)** | Whisper Base Q8_0 | GGML (`.bin`) | ~1.2 s | ~145 MB (liberada al finalizar) |
+| **Fase 1: ASR (Audio a Texto)** | Whisper Tiny Q8_0 | GGML (`.bin`) | ~0.6 s | ~45 MB (liberada al finalizar) |
 | **Fase 2: Visión Estructural** | VisionPsy-Nano | GGUF (`.gguf`) | ~0.8 s | ~450 MB (liberada al finalizar) |
 | **Fase 3: Triaje Semántico LLM** | Llama 3.2 1B Instruct | GGUF Q4_0 | ~1.8 s | ~720 MB (liberada al finalizar) |
 | **Pipeline Completo Multimodal** | Secuencial (1 a 1) | — | **~3.8 s** | **Pico máx: < 750 MB** |
