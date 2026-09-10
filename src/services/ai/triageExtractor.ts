@@ -172,8 +172,23 @@ function parseAndValidateJSON(
     const extractedInjuries = data.injuriesAndSymptoms?.trim() || manualInjuries?.trim() || deduceInjuries(originalRelato);
     const extractedVisionAnalysis = data.visualTriageAnalysis?.trim() || visionText?.trim() || undefined;
 
+    let finalSummary = data.extractedSummary?.trim();
+    if (!finalSummary || finalSummary.startsWith('[') || finalSummary.length < 10) {
+      finalSummary = generateIntelligentTriageSummary({
+        relatoText: originalRelato,
+        transcriptText: '',
+        manualInjuries: extractedInjuries,
+        visionText: extractedVisionAnalysis,
+        peopleCount: typeof data.reportedPeopleCount === 'number' ? data.reportedPeopleCount : parsePeopleCount(originalRelato),
+        locationReference: data.locationReference || detectedLoc.formattedReference,
+        priority,
+        combinedText: `${originalRelato} ${extractedInjuries || ''} ${extractedVisionAnalysis || ''}`.toLowerCase(),
+        hasNegatedInjuries: originalRelato.toLowerCase().includes('no hay herid') || originalRelato.toLowerCase().includes('sin herid'),
+      });
+    }
+
     return {
-      extractedSummary: data.extractedSummary || originalRelato || 'Emergencia registrada.',
+      extractedSummary: finalSummary,
       triagePriority: priority,
       needs,
       injuriesAndSymptoms: extractedInjuries,
@@ -188,6 +203,102 @@ function parseAndValidateJSON(
     console.warn('[TriageExtractor] Fallo al parsear JSON del LLM. Aplicando regla heurística de seguridad:', e);
     return fallbackExtraction(originalRelato, '', visionText, manualInjuries, province);
   }
+}
+
+/**
+ * Generador Inteligente de Resumen de Triaje Clínico-Operacional
+ * Sintetiza relato de texto, nota de voz, síntomas manuales,
+ * análisis visual de fotos, ubicación y personas afectadas.
+ */
+function generateIntelligentTriageSummary(params: {
+  relatoText?: string;
+  transcriptText?: string;
+  manualInjuries?: string;
+  visionText?: string;
+  peopleCount?: number;
+  locationReference: string;
+  priority: StartPriority;
+  combinedText: string;
+  hasNegatedInjuries: boolean;
+}): string {
+  const {
+    relatoText,
+    transcriptText,
+    manualInjuries,
+    visionText,
+    peopleCount,
+    locationReference,
+    priority,
+    combinedText,
+    hasNegatedInjuries,
+  } = params;
+
+  // 1. Limpieza y sanitización de texto escrito
+  let cleanRelato = (relatoText || '')
+    .replace(/IGNORA TODAS LAS REGLAS ANTERIORES[^\.]*\./gi, '')
+    .replace(/DROP TABLE[^\;]*\;/gi, '')
+    .replace(/SELECT \* FROM[^\;]*\;/gi, '')
+    .replace(/System Prompt Override:[^\.]*\./gi, '')
+    .trim();
+
+  // 2. Detección de si la entrada incluye audio o nota de voz
+  const isAudioPlaceholder =
+    (transcriptText && (transcriptText.includes('Audio') || transcriptText.includes('Nota de voz') || transcriptText.startsWith('['))) ||
+    (!cleanRelato && Boolean(transcriptText));
+
+  // 3. Descripción de personas y lugar
+  const count = typeof peopleCount === 'number' && peopleCount > 0 ? peopleCount : 1;
+  const victimsLabel = count > 1 ? `${count} personas afectadas` : '1 persona afectada';
+  const locLabel = locationReference && locationReference !== 'Panamá' ? `en ${locationReference}` : 'en la zona';
+
+  // 4. Síntesis de Cuadro Clínico / Lesiones
+  let clinicalLabel = '';
+  if (manualInjuries && manualInjuries.trim().length > 0 && !manualInjuries.toLowerCase().includes('sin heridas')) {
+    clinicalLabel = `Cuadro reportado: ${manualInjuries.trim()}.`;
+  } else if (hasNegatedInjuries) {
+    clinicalLabel = 'Sin víctimas con heridas graves visibles reportadas.';
+  } else if (combinedText.includes('fractura')) {
+    clinicalLabel = 'Sospecha de fractura.';
+  } else if (combinedText.includes('inconsciente')) {
+    clinicalLabel = 'Víctima inconsciente en la escena.';
+  }
+
+  // 5. Síntesis según la amenaza / evento
+  let eventSummary = '';
+  if (combinedText.includes('debajo') || combinedText.includes('bajo la casa') || combinedText.includes('atrapad') || combinedText.includes('no nos podemos mover')) {
+    eventSummary = `${count > 1 ? `${count} personas atrapadas/inmovilizadas` : 'Personas atrapadas'} con necesidad de rescate urgente ${locLabel}.`;
+  } else if (combinedText.includes('terremoto') || combinedText.includes('sismo')) {
+    eventSummary = `Emergencia tras terremoto ${locLabel} (${victimsLabel}).`;
+  } else if (combinedText.includes('inundad') || combinedText.includes('río') || combinedText.includes('rio')) {
+    eventSummary = `${count > 1 ? `${count} personas en riesgo` : 'Personas afectadas'} por inundación ${locLabel}.`;
+  } else if (combinedText.includes('incendio') || combinedText.includes('fuego')) {
+    eventSummary = `Emergencia por incendio ${locLabel} (${victimsLabel}).`;
+  }
+
+  // 6. Si el usuario escribió un relato sustancial (más de 15 caracteres)
+  if (cleanRelato.length > 15 && !cleanRelato.startsWith('[')) {
+    if (eventSummary && !cleanRelato.toLowerCase().includes(eventSummary.toLowerCase().slice(0, 20))) {
+      const audioSuffix = isAudioPlaceholder ? ' (Nota de voz adjunta).' : '';
+      return `${eventSummary} ${clinicalLabel ? `${clinicalLabel} ` : ''}${cleanRelato}${audioSuffix}`.trim();
+    }
+    const audioSuffix = isAudioPlaceholder ? ' (Nota de voz adjunta).' : '';
+    return `${cleanRelato}${audioSuffix}`.trim();
+  }
+
+  // 7. Si no escribió relato o es un marcador técnico de audio:
+  const baseHeader = eventSummary || `Emergencia reportada ${locLabel} (${victimsLabel}).`;
+  const priorityDescriptor = priority === 'ROJO'
+    ? 'Clasificación crítica (ROJO) con requerimiento de respuesta prioritaria.'
+    : priority === 'AMARILLO'
+    ? 'Clasificación urgente (AMARILLO).'
+    : 'Clasificación no urgente (VERDE).';
+
+  const audioAction = isAudioPlaceholder
+    ? 'Nota de voz del ciudadano disponible para evaluación directa de la brigada.'
+    : '';
+
+  const components = [baseHeader, clinicalLabel, priorityDescriptor, audioAction].filter(Boolean);
+  return components.join(' ');
 }
 
 /**
@@ -295,24 +406,18 @@ export function fallbackExtraction(
     priority = 'AMARILLO';
   }
 
-  // 5. Generar Resumen Estructurado Conciso y Sanitizado
-  let rawText = relatoText || transcriptText || 'Emergencia registrada localmente.';
-  // Sanitizar inyecciones de prompt o SQL del resumen
-  let cleanText = rawText
-    .replace(/IGNORA TODAS LAS REGLAS ANTERIORES[^\.]*\./gi, '')
-    .replace(/DROP TABLE[^\;]*\;/gi, '')
-    .replace(/SELECT \* FROM[^\;]*\;/gi, '')
-    .replace(/System Prompt Override:[^\.]*\./gi, '')
-    .trim();
-
-  let summary = cleanText || 'Emergencia registrada localmente.';
-  if (combined.includes('debajo') || combined.includes('bajo la casa') || combined.includes('atrapad') || combined.includes('no nos podemos mover')) {
-    summary = `${peopleCount ? `${peopleCount} personas atrapadas/inmovilizadas` : 'Personas atrapadas'} con necesidad de rescate urgente en ${detectedLocation.formattedReference}. ${combined.includes('herid') && !hasNegatedInjuries ? 'Se reportan heridos en la escena.' : ''}`;
-  } else if (combined.includes('terremoto') || combined.includes('sismo')) {
-    summary = `${peopleCount ? `${peopleCount} personas afectadas` : 'Personas afectadas'} tras terremoto en ${detectedLocation.formattedReference}. ${combined.includes('atrapad') ? 'Se reportan atrapados en estructura.' : ''}`;
-  } else if (combined.includes('inundad') || combined.includes('río')) {
-    summary = `${peopleCount ? `${peopleCount} personas en riesgo` : 'Personas afectadas'} por inundación en ${detectedLocation.formattedReference}.`;
-  }
+  // 5. Generar Resumen Clínico-Operacional Inteligente
+  const summary = generateIntelligentTriageSummary({
+    relatoText,
+    transcriptText,
+    manualInjuries,
+    visionText,
+    peopleCount,
+    locationReference: detectedLocation.formattedReference,
+    priority,
+    combinedText: combined,
+    hasNegatedInjuries,
+  });
 
   return {
     extractedSummary: summary.trim(),

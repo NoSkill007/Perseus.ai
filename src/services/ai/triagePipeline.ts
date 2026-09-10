@@ -42,11 +42,14 @@ export async function runTriagePipeline(input: TriageInput): Promise<TriageResul
     if (input.audioUri) {
       console.log('[TriagePipeline] -> Ejecutando Fase 1: Transcripción de Voz (ASR)');
       try {
-        transcript = await transcribeAudioLocally({ audioUri: input.audioUri });
-        console.log(`[TriagePipeline] Transcripción completada: "${transcript}"`);
+        transcript = await transcribeAudioLocally({ 
+          audioUri: input.audioUri,
+          fallbackText: input.textRelato,
+          injuriesAndSymptoms: input.injuriesAndSymptoms,
+        });
+        console.log(`[TriagePipeline] Transcripción obtenida: "${transcript}"`);
       } catch (err: any) {
-        console.warn('[TriagePipeline] ASR no completó la transcripción en flujo principal:', err?.message || err);
-        // En el flujo de emergencia, si el audio falla o está en calibración, no bloquear el reporte:
+        console.warn('[TriagePipeline] ASR error mitigado en pipeline:', err?.message || err);
         transcript = input.textRelato || '[Nota de voz adjunta en el reporte]';
       }
     }

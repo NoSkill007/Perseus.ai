@@ -618,7 +618,7 @@ export default function ReportarScreen() {
           {/* Vista Previa de Imagen */}
           {imageUri.length > 0 && (
             <View style={styles.imagePreviewContainer}>
-              <Image source={{ uri: imageUri }} style={styles.imagePreview} resizeMode="cover" />
+              <Image source={{ uri: imageUri }} style={styles.imagePreview as any} resizeMode="cover" />
               <TouchableOpacity
                 style={styles.removeImageFloatingButton}
                 onPress={handleRemoveImage}
@@ -1119,7 +1119,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   locationFormContainer: {
-    transition: 'opacity 0.2s',
   },
   locationFormDisabled: {
     opacity: 0.35,

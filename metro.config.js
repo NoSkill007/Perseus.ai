@@ -20,6 +20,17 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
       filePath: path.resolve(__dirname, 'src/services/ai/qvacWebStub.js'),
     };
   }
+  // Mobile / Native: ensure @qvac/sdk/worker.mobile.bundle resolves directly to the bundle file
+  if (
+    moduleName === '@qvac/sdk/worker.mobile.bundle' ||
+    moduleName === '@qvac/sdk/worker.mobile.bundle.js' ||
+    moduleName.endsWith('worker.mobile.bundle')
+  ) {
+    return {
+      type: 'sourceFile',
+      filePath: path.resolve(__dirname, 'node_modules/@qvac/sdk/dist/worker.mobile.bundle.js'),
+    };
+  }
   if (defaultResolveRequest) {
     return defaultResolveRequest(context, moduleName, platform);
   }

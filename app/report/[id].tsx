@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { Ionicons } from '@expo/vector-icons';
+import { Audio } from 'expo-av';
 import { getReportById, deleteReport } from '../../src/services/reportService';
 import type { ReportRecord, StartPriority } from '../../src/types/triageTypes';
 
@@ -52,6 +53,9 @@ export default function ReportDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [showAudit, setShowAudit] = useState(false);
   const [isImageModalVisible, setIsImageModalVisible] = useState(false);
+  const [soundInstance, setSoundInstance] = useState<Audio.Sound | null>(null);
+  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+  const [audioLoading, setAudioLoading] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -60,8 +64,57 @@ export default function ReportDetailScreen() {
         setReport(r);
       }
       setLoading(false);
-    }, [db, id])
+      return () => {
+        if (soundInstance) {
+          soundInstance.unloadAsync().catch(() => {});
+        }
+      };
+    }, [db, id, soundInstance])
   );
+
+  useEffect(() => {
+    return () => {
+      if (soundInstance) {
+        soundInstance.unloadAsync().catch(() => {});
+      }
+    };
+  }, [soundInstance]);
+
+  const handleTogglePlayAudio = async () => {
+    if (!report?.audioUri) return;
+    try {
+      if (isPlayingAudio && soundInstance) {
+        await soundInstance.pauseAsync();
+        setIsPlayingAudio(false);
+        return;
+      }
+
+      if (soundInstance) {
+        await soundInstance.playAsync();
+        setIsPlayingAudio(true);
+        return;
+      }
+
+      setAudioLoading(true);
+      const { sound } = await Audio.Sound.createAsync(
+        { uri: report.audioUri },
+        { shouldPlay: true }
+      );
+      setSoundInstance(sound);
+      setIsPlayingAudio(true);
+      setAudioLoading(false);
+
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (status.isLoaded && status.didJustFinish) {
+          setIsPlayingAudio(false);
+        }
+      });
+    } catch (err: any) {
+      setAudioLoading(false);
+      setIsPlayingAudio(false);
+      Alert.alert('Audio', 'No se pudo reproducir el archivo de audio grabado.');
+    }
+  };
 
   const handleDeleteReport = () => {
     Alert.alert(
@@ -172,6 +225,36 @@ export default function ReportDetailScreen() {
                 <Ionicons name="scan-outline" size={14} color="#F8FAFC" />
                 <Text style={styles.imageOverlayText}>Tocar para ampliar</Text>
               </View>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* NOTA DE VOZ GRABADA (Reproductor interactivo para Rescatista y Ciudadano) */}
+        {report.audioUri && (
+          <View style={[styles.card, { borderColor: '#4F46E5', borderWidth: 1 }]}>
+            <View style={styles.cardHeaderRow}>
+              <Ionicons name="mic" size={20} color="#818CF8" />
+              <Text style={[styles.cardTitleInline, { color: '#C7D2FE' }]}>
+                Nota de Voz Grabada en la Escena
+              </Text>
+            </View>
+            <Text style={styles.audioHintText}>
+              Audio original enviado por el ciudadano. Puedes reproducirlo para escuchar más detalles del incidente.
+            </Text>
+            <TouchableOpacity
+              style={[styles.audioPlayButton, isPlayingAudio && styles.audioPlayButtonActive]}
+              onPress={handleTogglePlayAudio}
+              disabled={audioLoading}
+              activeOpacity={0.8}
+            >
+              {audioLoading ? (
+                <ActivityIndicator size="small" color="#F8FAFC" />
+              ) : (
+                <Ionicons name={isPlayingAudio ? 'pause-circle' : 'play-circle'} size={24} color="#F8FAFC" />
+              )}
+              <Text style={styles.audioPlayButtonText}>
+                {isPlayingAudio ? 'Pausar Audio' : 'Escuchar Nota de Voz'}
+              </Text>
             </TouchableOpacity>
           </View>
         )}
@@ -554,6 +637,30 @@ const styles = StyleSheet.create({
   fullscreenImage: {
     width: '100%',
     height: '80%',
+  },
+  audioHintText: {
+    fontSize: 12,
+    color: '#94A3B8',
+    marginBottom: 12,
+    lineHeight: 18,
+  },
+  audioPlayButton: {
+    backgroundColor: '#4F46E5',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    gap: 8,
+  },
+  audioPlayButtonActive: {
+    backgroundColor: '#3730A3',
+  },
+  audioPlayButtonText: {
+    color: '#F8FAFC',
+    fontSize: 14,
+    fontWeight: '700',
   },
   cardContent: { fontSize: 14, color: '#F8FAFC', lineHeight: 22 },
   dataRow: {

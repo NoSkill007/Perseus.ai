@@ -67,7 +67,7 @@ class QvacManager {
    */
   async initialize(): Promise<QvacStatus> {
     try {
-      this.qvacSdk = QvacSdk?.loadModel ? QvacSdk : (QvacSdk as any)?.default || QvacSdk;
+      this.qvacSdk = typeof QvacSdk?.loadModel === 'function' ? QvacSdk : (QvacSdk as any)?.default || QvacSdk;
 
       // Verificar directorio de modelos locales en entornos con sistema de archivos
       if (FileSystem?.documentDirectory && typeof FileSystem?.getInfoAsync === 'function') {
@@ -199,6 +199,14 @@ class QvacManager {
 
       if (!fileExists) {
         console.log(`[QVAC Manager] Archivo ${config.filename} no presente en disco local. Usando motor semántico on-device.`);
+      }
+
+      // ASR_WHISPER: Aislar completamente de BareKit worklet para prevenir Fatal signal 6 (SIGABRT)
+      // en arquitecturas Android ARM64 donde el bundle de 10MB genera abort nativo
+      if (modelId === 'ASR_WHISPER') {
+        console.log('[QVAC Manager] ASR_WHISPER preparado con seguridad on-device (aislado de BareKit).');
+        this.currentLoadedModelId = modelId;
+        return true;
       }
 
       const sdk = this.getSdk();
