@@ -37,7 +37,7 @@ export async function runTriagePipeline(input: TriageInput): Promise<TriageResul
 
   try {
     // -------------------------------------------------------------
-    // FASE 1: Transcripción de Audio (Whisper Base Q8_0)
+    // FASE 1: Transcripción de Audio (Whisper Tiny Q8_0)
     // -------------------------------------------------------------
     if (input.audioUri) {
       console.log('[TriagePipeline] -> Ejecutando Fase 1: Transcripción de Voz (ASR)');
@@ -90,11 +90,13 @@ export async function runTriagePipeline(input: TriageInput): Promise<TriageResul
       createdAt: Date.now(),
       audioUri: input.audioUri,
       imageUri: input.imageUri,
+      textRelato: input.textRelato,
       transcript,
       visionSeverity,
       visualTriageAnalysis: llmPayload.visualTriageAnalysis || visionSeverity,
       injuriesAndSymptoms: llmPayload.injuriesAndSymptoms,
       extractedSummary: llmPayload.extractedSummary,
+      executiveSummary: llmPayload.executiveSummary,
       triagePriority: llmPayload.triagePriority,
       needs: llmPayload.needs,
       reportedPeopleCount: llmPayload.reportedPeopleCount,

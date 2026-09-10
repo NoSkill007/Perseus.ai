@@ -21,11 +21,13 @@ interface ReportRow {
   status: string;
   audio_uri: string | null;
   image_uri: string | null;
+  text_relato: string | null;
   transcript: string | null;
   vision_severity: string | null;
   visual_triage_analysis: string | null;
   injuries_and_symptoms: string | null;
   extracted_summary: string;
+  executive_summary: string | null;
   triage_priority: string;
   needs: string | null;
   reported_people_count: number | null;
@@ -53,11 +55,13 @@ function rowToReport(row: ReportRow): ReportRecord {
     status: (row.status as ReportStatus) || 'borrador',
     audioUri: row.audio_uri || undefined,
     imageUri: row.image_uri || undefined,
+    textRelato: row.text_relato || undefined,
     transcript: row.transcript || undefined,
     visionSeverity: row.vision_severity || undefined,
     visualTriageAnalysis: row.visual_triage_analysis || undefined,
     injuriesAndSymptoms: row.injuries_and_symptoms || undefined,
     extractedSummary: row.extracted_summary || '',
+    executiveSummary: row.executive_summary || undefined,
     triagePriority: (row.triage_priority as StartPriority) || 'AMARILLO',
     needs: row.needs ? JSON.parse(row.needs) : [],
     reportedPeopleCount: row.reported_people_count != null && row.reported_people_count > 0 ? row.reported_people_count : undefined,
@@ -90,15 +94,15 @@ export function saveReport(
   db.runSync(
     `INSERT OR REPLACE INTO reports (
       report_id, created_at, source, status,
-      audio_uri, image_uri,
+      audio_uri, image_uri, text_relato,
       transcript, vision_severity, visual_triage_analysis, injuries_and_symptoms,
-      extracted_summary, triage_priority,
+      extracted_summary, executive_summary, triage_priority,
       needs, reported_people_count, location_reference, missing_fields,
       raw_model_output, is_local_inference, execution_time_ms,
       province, district, corregimiento,
       reporter_profile, sync_event_id, sent_at, received_at, ack_received,
       updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       report.reportId || '',
       report.createdAt || now,
@@ -106,11 +110,13 @@ export function saveReport(
       report.status || 'borrador',
       report.audioUri || '',
       report.imageUri || '',
+      report.textRelato || '',
       report.transcript || '',
       report.visionSeverity || '',
       report.visualTriageAnalysis || '',
       report.injuriesAndSymptoms || '',
       report.extractedSummary || '',
+      report.executiveSummary || '',
       report.triagePriority || 'AMARILLO',
       JSON.stringify(report.needs || []),
       report.reportedPeopleCount ?? 0,
@@ -150,11 +156,13 @@ export function triageResultToReport(
     status: 'borrador',
     audioUri: result.audioUri,
     imageUri: result.imageUri,
+    textRelato: result.textRelato,
     transcript: result.transcript,
     visionSeverity: result.visionSeverity,
     visualTriageAnalysis: result.visualTriageAnalysis,
     injuriesAndSymptoms: result.injuriesAndSymptoms,
     extractedSummary: result.extractedSummary,
+    executiveSummary: result.executiveSummary,
     triagePriority: result.triagePriority,
     needs: result.needs,
     reportedPeopleCount: result.reportedPeopleCount,
@@ -272,6 +280,8 @@ export function updateReportFields(
   reportId: string,
   fields: {
     extractedSummary?: string;
+    executiveSummary?: string;
+    textRelato?: string;
     triagePriority?: StartPriority;
     needs?: DisasterNeedCategory[];
     reportedPeopleCount?: number;
@@ -287,6 +297,14 @@ export function updateReportFields(
   if (fields.extractedSummary !== undefined) {
     updates.push('extracted_summary = ?');
     params.push(fields.extractedSummary || '');
+  }
+  if (fields.executiveSummary !== undefined) {
+    updates.push('executive_summary = ?');
+    params.push(fields.executiveSummary || '');
+  }
+  if (fields.textRelato !== undefined) {
+    updates.push('text_relato = ?');
+    params.push(fields.textRelato || '');
   }
   if (fields.triagePriority !== undefined) {
     updates.push('triage_priority = ?');

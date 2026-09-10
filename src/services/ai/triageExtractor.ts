@@ -14,6 +14,7 @@ export interface ExtractTriageOptions {
 
 export interface ExtractedTriagePayload {
   extractedSummary: string;
+  executiveSummary?: string;
   triagePriority: StartPriority;
   needs: DisasterNeedCategory[];
   injuriesAndSymptoms?: string;
@@ -54,6 +55,7 @@ REGLAS DE EVALUACIÓN CLÍNICA Y DE TRIAJE (START + ESFERA):
 FORMATO JSON DE RESPUESTA:
 {
   "extractedSummary": "Resumen conciso en 1 o 2 oraciones en español indicando tipo de desastre, cantidad de afectados y situación general",
+  "executiveSummary": "Párrafo completo y detallado para el rescatista combinando lo que se vio en foto, escuchó en audio y escribió en texto, sin omitir heridas, daños ni afectados",
   "triagePriority": "ROJO" | "AMARILLO" | "VERDE" | "NEGRO",
   "injuriesAndSymptoms": "Descripción clara de las heridas, fracturas, hemorragias o síntomas detectados",
   "visualTriageAnalysis": "Descripción del daño estructural o gravedad visual de la foto",
@@ -187,8 +189,22 @@ function parseAndValidateJSON(
       });
     }
 
+    const execSummary = (data.executiveSummary && data.executiveSummary.trim().length > 20)
+      ? data.executiveSummary.trim()
+      : generateAiExecutiveSummary({
+          relatoText: originalRelato,
+          transcriptText: '',
+          visionText: extractedVisionAnalysis,
+          manualInjuries: extractedInjuries,
+          peopleCount: typeof data.reportedPeopleCount === 'number' ? data.reportedPeopleCount : parsePeopleCount(originalRelato),
+          locationReference: data.locationReference || detectedLoc.formattedReference,
+          priority,
+          needs,
+        });
+
     return {
       extractedSummary: finalSummary,
+      executiveSummary: execSummary,
       triagePriority: priority,
       needs,
       injuriesAndSymptoms: extractedInjuries,
@@ -203,6 +219,145 @@ function parseAndValidateJSON(
     console.warn('[TriageExtractor] Fallo al parsear JSON del LLM. Aplicando regla heurística de seguridad:', e);
     return fallbackExtraction(originalRelato, '', visionText, manualInjuries, province);
   }
+}
+
+/**
+ * Generador de Resumen Ejecutivo Consolidado de IA para Rescatistas
+ * Sintetiza como un rescatista profesional en terreno todo lo visto, escuchado y escrito,
+ * sin omitir heridas, daños estructurales, víctimas ni necesidades operativas.
+ */
+export function generateAiExecutiveSummary(params: {
+  relatoText?: string;
+  transcriptText?: string;
+  visionText?: string;
+  manualInjuries?: string;
+  peopleCount?: number;
+  locationReference?: string;
+  priority: StartPriority;
+  needs: DisasterNeedCategory[];
+}): string {
+  const {
+    relatoText,
+    transcriptText,
+    visionText,
+    manualInjuries,
+    peopleCount,
+    locationReference,
+    priority,
+    needs,
+  } = params;
+
+  const sections: string[] = [];
+
+  // 1. Encabezado de situación y víctimas
+  const count = typeof peopleCount === 'number' && peopleCount > 0 ? peopleCount : 1;
+  const victimsStr = count > 1 ? `${count} personas afectadas` : '1 persona afectada';
+  const locStr = locationReference && locationReference !== 'Panamá' ? `en ${locationReference}` : 'en el sector reportado';
+
+  sections.push(
+    `INFORME PREHOSPITALARIO Y DE ESCENA: Se atiende incidente clasificado como Prioridad ${priority} con afectación estimada de ${victimsStr} ${locStr}.`
+  );
+
+  // 2. Lo que se escribió (Relato de campo del ciudadano/operador)
+  const cleanRelato = (relatoText || '')
+    .replace(/IGNORA TODAS LAS REGLAS ANTERIORES[^\.]*\./gi, '')
+    .replace(/DROP TABLE[^\;]*\;/gi, '')
+    .replace(/SELECT \* FROM[^\;]*\;/gi, '')
+    .replace(/System Prompt Override:[^\.]*\./gi, '')
+    .trim();
+
+  if (cleanRelato && cleanRelato.length > 3 && !cleanRelato.startsWith('[')) {
+    sections.push(`Relato directo en campo: "${cleanRelato}".`);
+  }
+
+  // 3. Lo que se escuchó (Transcripción de audio ASR)
+  if (
+    transcriptText &&
+    transcriptText.trim().length > 3 &&
+    !transcriptText.startsWith('[') &&
+    transcriptText.trim() !== cleanRelato
+  ) {
+    sections.push(`Testimonio de voz captado: "${transcriptText.trim()}".`);
+  } else if (
+    transcriptText &&
+    (transcriptText.includes('Audio') || transcriptText.includes('Nota de voz') || transcriptText.startsWith('['))
+  ) {
+    sections.push(`Se cuenta con registro de audio original adjunto para verificación de la brigada.`);
+  }
+
+  // 4. Lo que se vio (Análisis visual multimodal de la escena / lesión)
+  if (
+    visionText &&
+    visionText.trim().length > 0 &&
+    !visionText.includes('no completado') &&
+    !visionText.includes('no se adjuntó')
+  ) {
+    sections.push(`Evaluación visual on-device (cámara): ${visionText.trim()}`);
+  }
+
+  // 5. Heridas, lesiones y cuadro clínico (NO OMITIR NADA)
+  if (manualInjuries && manualInjuries.trim().length > 0 && !manualInjuries.toLowerCase().includes('sin heridas')) {
+    sections.push(`Lesiones y cuadro clínico identificado: ${manualInjuries.trim()}`);
+  } else {
+    const combined = `${relatoText || ''} ${transcriptText || ''}`.toLowerCase();
+    if (
+      combined.includes('fractur') ||
+      combined.includes('inconsciente') ||
+      combined.includes('hemorr') ||
+      combined.includes('quemadur') ||
+      combined.includes('atrapad')
+    ) {
+      const deduced = deduceInjuries(combined);
+      sections.push(`Hallazgos clínicos deducidos: ${deduced}`);
+    } else if (
+      combined.includes('no hay herid') ||
+      combined.includes('sin herid') ||
+      combined.includes('ilesos')
+    ) {
+      sections.push(`Condición clínica: Personas reportadas sin lesiones físicas graves aparentes.`);
+    } else {
+      sections.push(`Condición clínica: Requiere valoración y toma de signos vitales primaria por la brigada en el punto de encuentro.`);
+    }
+  }
+
+  // 6. Atrapamiento, daños estructurales y acceso
+  const combinedAll = `${relatoText || ''} ${transcriptText || ''} ${visionText || ''}`.toLowerCase();
+  if (
+    combinedAll.includes('atrapad') ||
+    combinedAll.includes('debajo') ||
+    combinedAll.includes('bajo la casa') ||
+    combinedAll.includes('bajo los escombros') ||
+    combinedAll.includes('techo')
+  ) {
+    sections.push(
+      `ALERTA OPERATIVA: Se reportan personas atrapadas o con movilidad impedida por colapso o anegamiento; se requiere equipo de extracción, apuntalamiento o rescate de inmediato.`
+    );
+  }
+
+  // 7. Recursos humanitarios Esfera requeridos
+  if (needs && needs.length > 0) {
+    const needNames = needs.map((n) => {
+      switch (n) {
+        case 'ACCESO_RESCATE':
+          return 'Búsqueda y Rescate Urbano (USAR)';
+        case 'SALUD':
+          return 'Atención Médica y Botiquín de Trauma';
+        case 'AGUA_SANEAMIENTO':
+          return 'Agua Potable y Saneamiento';
+        case 'ALBERGUE':
+          return 'Albergue y Refugio Temporal';
+        case 'ALIMENTACION':
+          return 'Suministro de Alimentos/Víveres';
+        case 'PROTECCION':
+          return 'Seguridad y Protección';
+        default:
+          return n;
+      }
+    });
+    sections.push(`Recursos y asistencia prioritaria requerida: ${needNames.join(', ')}.`);
+  }
+
+  return sections.join(' ');
 }
 
 /**
@@ -419,8 +574,20 @@ export function fallbackExtraction(
     hasNegatedInjuries,
   });
 
+  const execSummary = generateAiExecutiveSummary({
+    relatoText,
+    transcriptText,
+    visionText,
+    manualInjuries,
+    peopleCount,
+    locationReference: detectedLocation.formattedReference,
+    priority,
+    needs,
+  });
+
   return {
     extractedSummary: summary.trim(),
+    executiveSummary: execSummary,
     triagePriority: priority,
     needs,
     injuriesAndSymptoms: manualInjuries?.trim() || deduceInjuries(combined),

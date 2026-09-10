@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -28,6 +28,8 @@ import {
   takeCameraPhoto,
   pickGalleryImage,
 } from '../../src/utils/mediaCapture';
+import { useTheme } from '../../src/context/ThemeContext';
+import type { ThemeColors } from '../../src/constants/theme';
 import type { TriageInput } from '../../src/types/triageTypes';
 
 const PROVINCIAS = [
@@ -66,6 +68,8 @@ function getFilename(uri: string): string {
 export default function ReportarScreen() {
   const db = useSQLiteContext();
   const router = useRouter();
+  const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
 
   // Estados del formulario
   const [textRelato, setTextRelato] = useState('');
@@ -380,6 +384,7 @@ export default function ReportarScreen() {
 
       // Asignar personas afectadas ingresadas y marcar como confirmado directamente
       report.reportedPeopleCount = personasAfectadas;
+      if (hasText) report.textRelato = textRelato.trim();
       report.status = 'confirmado';
 
       // 5. Guardar reporte en base de datos SQLite
@@ -423,7 +428,7 @@ export default function ReportarScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <StatusBar barStyle="light-content" backgroundColor="#0F172A" />
+      <StatusBar barStyle={theme.statusBarStyle === 'light' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
 
       <ScrollView
         style={styles.container}
@@ -441,13 +446,13 @@ export default function ReportarScreen() {
         {/* Sección 1: Relato en Texto */}
         <View style={styles.card}>
           <View style={styles.sectionHeaderRow}>
-            <Ionicons name="document-text-outline" size={20} color="#3B82F6" />
+            <Ionicons name="document-text-outline" size={20} color={theme.primary} />
             <Text style={styles.sectionTitle}>1. Relato de la Emergencia</Text>
           </View>
           <TextInput
             style={styles.textArea}
             placeholder="Describa la situación de emergencia..."
-            placeholderTextColor="#64748B"
+            placeholderTextColor={theme.textPlaceholder}
             multiline
             numberOfLines={5}
             value={textRelato}
@@ -509,7 +514,7 @@ export default function ReportarScreen() {
           <TextInput
             style={[styles.textArea, { minHeight: 70, marginTop: 8 }]}
             placeholder="Ej: Golpe fuerte en la cabeza, dolor agudo en el pecho, pierna inmovilizada..."
-            placeholderTextColor="#64748B"
+            placeholderTextColor={theme.textPlaceholder}
             multiline
             numberOfLines={3}
             value={injuriesAndSymptoms}
@@ -689,7 +694,7 @@ export default function ReportarScreen() {
                 useSavedAddress && styles.inputDisabledStyle,
               ]}
               placeholder="Ej: David, Panamá, Chitré..."
-              placeholderTextColor="#64748B"
+              placeholderTextColor={theme.textPlaceholder}
               value={district}
               onChangeText={setDistrict}
               editable={!useSavedAddress}
@@ -703,7 +708,7 @@ export default function ReportarScreen() {
                 useSavedAddress && styles.inputDisabledStyle,
               ]}
               placeholder="Ej: Calidonia, San Francisco, Dolega..."
-              placeholderTextColor="#64748B"
+              placeholderTextColor={theme.textPlaceholder}
               value={corregimiento}
               onChangeText={setCorregimiento}
               editable={!useSavedAddress}
@@ -900,470 +905,471 @@ export default function ReportarScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#0F172A',
-  },
-  container: {
-    flex: 1,
-    backgroundColor: '#0F172A',
-  },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 40,
-  },
-  header: {
-    marginBottom: 20,
-    marginTop: 4,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#F8FAFC',
-    letterSpacing: 0.5,
-  },
-  subtitle: {
-    fontSize: 13,
-    color: '#94A3B8',
-    marginTop: 4,
-    lineHeight: 18,
-  },
-  card: {
-    backgroundColor: '#1E293B',
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  sectionHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-    gap: 8,
-  },
-  sectionTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#F8FAFC',
-  },
-  textArea: {
-    backgroundColor: '#0F172A',
-    borderRadius: 10,
-    padding: 12,
-    color: '#F8FAFC',
-    fontSize: 14,
-    minHeight: 110,
-    borderWidth: 1,
-    borderColor: '#334155',
-    lineHeight: 20,
-  },
-  audioActionRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  audioButton: {
-    flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  audioButtonRecord: {
-    backgroundColor: '#3B82F6',
-  },
-  audioButtonRecording: {
-    backgroundColor: '#EF4444',
-  },
-  audioButtonFile: {
-    backgroundColor: '#0F172A',
-    borderWidth: 1,
-    borderColor: '#334155',
-    flexDirection: 'row',
-    gap: 6,
-  },
-  audioButtonContentRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  recordingContentRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  recordingPulseDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#F8FAFC',
-  },
-  audioButtonText: {
-    color: '#F8FAFC',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  audioFileButtonText: {
-    color: '#94A3B8',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  mediaBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#0F172A',
-    borderRadius: 10,
-    padding: 10,
-    marginTop: 12,
-    borderWidth: 1,
-    borderColor: '#334155',
-    gap: 10,
-  },
-  mediaBadgeTextContainer: {
-    flex: 1,
-  },
-  mediaBadgeTitle: {
-    color: '#F8FAFC',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  mediaBadgeSubtitle: {
-    color: '#94A3B8',
-    fontSize: 11,
-    marginTop: 2,
-  },
-  removeMediaButton: {
-    padding: 4,
-  },
-  photoActionRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  photoButton: {
-    flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 6,
-  },
-  photoButtonCamera: {
-    backgroundColor: '#3B82F6',
-  },
-  photoButtonGallery: {
-    backgroundColor: '#0F172A',
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  photoButtonText: {
-    color: '#F8FAFC',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  photoGalleryButtonText: {
-    color: '#94A3B8',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  imagePreviewContainer: {
-    marginTop: 12,
-    alignSelf: 'center',
-    position: 'relative',
-  },
-  imagePreview: {
-    width: 200,
-    height: 200,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  removeImageFloatingButton: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    backgroundColor: 'rgba(239, 68, 68, 0.9)',
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  addressMainButton: {
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 14,
-    backgroundColor: '#3B82F6',
-  },
-  addressMainButtonActive: {
-    backgroundColor: '#1D4ED8',
-    borderWidth: 2,
-    borderColor: '#60A5FA',
-    shadowColor: '#3B82F6',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.4,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  addressMainButtonText: {
-    color: '#F8FAFC',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  locationFormContainer: {
-  },
-  locationFormDisabled: {
-    opacity: 0.35,
-  },
-  inputDisabledStyle: {
-    backgroundColor: '#1E293B',
-    borderColor: '#1E293B',
-    color: '#64748B',
-  },
-  inputLabel: {
-    fontSize: 12,
-    color: '#94A3B8',
-    fontWeight: '600',
-    marginBottom: 6,
-    marginTop: 8,
-  },
-  pickerSelector: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#0F172A',
-    borderRadius: 10,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  pickerSelectorText: {
-    color: '#F8FAFC',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  inputField: {
-    backgroundColor: '#0F172A',
-    borderRadius: 10,
-    padding: 12,
-    color: '#F8FAFC',
-    fontSize: 14,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  sectionSubtitle: {
-    fontSize: 12,
-    color: '#94A3B8',
-    marginBottom: 10,
-    marginTop: -2,
-    lineHeight: 17,
-  },
-  symptomsChipsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 8,
-  },
-  symptomChip: {
-    backgroundColor: '#0F172A',
-    borderColor: '#334155',
-    borderWidth: 1,
-    borderRadius: 20,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-  },
-  symptomChipActive: {
-    backgroundColor: '#7F1D1D',
-    borderColor: '#EF4444',
-  },
-  symptomChipText: {
-    fontSize: 12,
-    color: '#94A3B8',
-    fontWeight: '600',
-  },
-  symptomChipTextActive: {
-    color: '#F8FAFC',
-    fontWeight: '700',
-  },
-  stepperContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#0F172A',
-    borderRadius: 10,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  stepperLabel: {
-    color: '#94A3B8',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  stepperControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-  },
-  stepperButton: {
-    backgroundColor: '#3B82F6',
-    width: 36,
-    height: 36,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stepperButtonDisabled: {
-    backgroundColor: '#1E293B',
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  stepperValue: {
-    color: '#F8FAFC',
-    fontSize: 18,
-    fontWeight: '800',
-    minWidth: 28,
-    textAlign: 'center',
-  },
-  submitButton: {
-    backgroundColor: '#3B82F6',
-    borderRadius: 14,
-    paddingVertical: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    marginTop: 8,
-    shadowColor: '#3B82F6',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  submitIcon: {
-    marginRight: 8,
-  },
-  submitButtonText: {
-    color: '#F8FAFC',
-    fontSize: 17,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.75)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  modalContent: {
-    backgroundColor: '#1E293B',
-    borderRadius: 16,
-    width: '100%',
-    maxHeight: '75%',
-    padding: 18,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  modalHeaderTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#F8FAFC',
-    marginBottom: 14,
-    textAlign: 'center',
-  },
-  modalScrollView: {
-    marginBottom: 12,
-  },
-  modalOptionItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#334155',
-  },
-  modalOptionItemSelected: {
-    backgroundColor: 'rgba(59, 130, 246, 0.12)',
-    borderRadius: 8,
-  },
-  modalOptionText: {
-    color: '#94A3B8',
-    fontSize: 14,
-  },
-  modalOptionTextSelected: {
-    color: '#3B82F6',
-    fontWeight: '700',
-  },
-  modalCloseButton: {
-    backgroundColor: '#0F172A',
-    paddingVertical: 12,
-    borderRadius: 10,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  modalCloseButtonText: {
-    color: '#94A3B8',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  processingOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.88)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-  },
-  processingDialog: {
-    backgroundColor: '#1E293B',
-    borderRadius: 20,
-    padding: 24,
-    width: '100%',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  spinner: {
-    marginBottom: 16,
-  },
-  processingMainTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#F8FAFC',
-    marginBottom: 20,
-    textAlign: 'center',
-  },
-  stageList: {
-    width: '100%',
-    gap: 12,
-    marginBottom: 20,
-  },
-  stageItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  stageText: {
-    color: '#94A3B8',
-    fontSize: 13,
-  },
-  stageTextActive: {
-    color: '#F8FAFC',
-    fontWeight: '700',
-  },
-  processingFooterNote: {
-    fontSize: 11,
-    color: '#64748B',
-    textAlign: 'center',
-    fontStyle: 'italic',
-  },
-});
+function createStyles(theme: ThemeColors) {
+  return StyleSheet.create({
+    safeArea: {
+      flex: 1,
+      backgroundColor: theme.background,
+    },
+    container: {
+      flex: 1,
+      backgroundColor: theme.background,
+    },
+    scrollContent: {
+      padding: 16,
+      paddingBottom: 40,
+    },
+    header: {
+      marginBottom: 20,
+      marginTop: 4,
+    },
+    title: {
+      fontSize: 24,
+      fontWeight: '800',
+      color: theme.text,
+      letterSpacing: 0.5,
+    },
+    subtitle: {
+      fontSize: 13,
+      color: theme.textMuted,
+      marginTop: 4,
+      lineHeight: 18,
+    },
+    card: {
+      backgroundColor: theme.card,
+      borderRadius: 14,
+      padding: 16,
+      marginBottom: 16,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    sectionHeaderRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 12,
+      gap: 8,
+    },
+    sectionTitle: {
+      fontSize: 15,
+      fontWeight: '700',
+      color: theme.text,
+    },
+    textArea: {
+      backgroundColor: theme.cardInner,
+      borderRadius: 10,
+      padding: 12,
+      color: theme.text,
+      fontSize: 14,
+      minHeight: 110,
+      borderWidth: 1,
+      borderColor: theme.border,
+      lineHeight: 20,
+    },
+    audioActionRow: {
+      flexDirection: 'row',
+      gap: 10,
+    },
+    audioButton: {
+      flex: 1,
+      paddingVertical: 12,
+      paddingHorizontal: 14,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    audioButtonRecord: {
+      backgroundColor: theme.primary,
+    },
+    audioButtonRecording: {
+      backgroundColor: theme.danger,
+    },
+    audioButtonFile: {
+      backgroundColor: theme.cardInner,
+      borderWidth: 1,
+      borderColor: theme.border,
+      flexDirection: 'row',
+      gap: 6,
+    },
+    audioButtonContentRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    recordingContentRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    recordingPulseDot: {
+      width: 10,
+      height: 10,
+      borderRadius: 5,
+      backgroundColor: '#FFFFFF',
+    },
+    audioButtonText: {
+      color: '#FFFFFF',
+      fontSize: 13,
+      fontWeight: '700',
+    },
+    audioFileButtonText: {
+      color: theme.textMuted,
+      fontSize: 13,
+      fontWeight: '600',
+    },
+    mediaBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: theme.cardInner,
+      borderRadius: 10,
+      padding: 10,
+      marginTop: 12,
+      borderWidth: 1,
+      borderColor: theme.border,
+      gap: 10,
+    },
+    mediaBadgeTextContainer: {
+      flex: 1,
+    },
+    mediaBadgeTitle: {
+      color: theme.text,
+      fontSize: 12,
+      fontWeight: '600',
+    },
+    mediaBadgeSubtitle: {
+      color: theme.textMuted,
+      fontSize: 11,
+      marginTop: 2,
+    },
+    removeMediaButton: {
+      padding: 4,
+    },
+    photoActionRow: {
+      flexDirection: 'row',
+      gap: 10,
+    },
+    photoButton: {
+      flex: 1,
+      paddingVertical: 12,
+      paddingHorizontal: 14,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexDirection: 'row',
+      gap: 6,
+    },
+    photoButtonCamera: {
+      backgroundColor: theme.primary,
+    },
+    photoButtonGallery: {
+      backgroundColor: theme.cardInner,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    photoButtonText: {
+      color: '#FFFFFF',
+      fontSize: 13,
+      fontWeight: '700',
+    },
+    photoGalleryButtonText: {
+      color: theme.textMuted,
+      fontSize: 13,
+      fontWeight: '600',
+    },
+    imagePreviewContainer: {
+      marginTop: 12,
+      alignSelf: 'center',
+      position: 'relative',
+    },
+    imagePreview: {
+      width: 200,
+      height: 200,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    removeImageFloatingButton: {
+      position: 'absolute',
+      top: 8,
+      right: 8,
+      backgroundColor: 'rgba(239, 68, 68, 0.9)',
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    addressMainButton: {
+      paddingVertical: 12,
+      paddingHorizontal: 14,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexDirection: 'row',
+      gap: 8,
+      marginBottom: 14,
+      backgroundColor: theme.primary,
+    },
+    addressMainButtonActive: {
+      backgroundColor: theme.primaryDark,
+      borderWidth: 2,
+      borderColor: theme.primaryLight,
+      shadowColor: theme.primary,
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.4,
+      shadowRadius: 4,
+      elevation: 3,
+    },
+    addressMainButtonText: {
+      color: '#FFFFFF',
+      fontSize: 14,
+      fontWeight: '700',
+    },
+    locationFormContainer: {},
+    locationFormDisabled: {
+      opacity: 0.35,
+    },
+    inputDisabledStyle: {
+      backgroundColor: theme.cardInner,
+      borderColor: theme.border,
+      color: theme.textPlaceholder,
+    },
+    inputLabel: {
+      fontSize: 12,
+      color: theme.textMuted,
+      fontWeight: '600',
+      marginBottom: 6,
+      marginTop: 8,
+    },
+    pickerSelector: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      backgroundColor: theme.cardInner,
+      borderRadius: 10,
+      padding: 12,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    pickerSelectorText: {
+      color: theme.text,
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    inputField: {
+      backgroundColor: theme.cardInner,
+      borderRadius: 10,
+      padding: 12,
+      color: theme.text,
+      fontSize: 14,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    sectionSubtitle: {
+      fontSize: 12,
+      color: theme.textMuted,
+      marginBottom: 10,
+      marginTop: -2,
+      lineHeight: 17,
+    },
+    symptomsChipsRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
+      marginBottom: 8,
+    },
+    symptomChip: {
+      backgroundColor: theme.cardInner,
+      borderColor: theme.border,
+      borderWidth: 1,
+      borderRadius: 20,
+      paddingVertical: 6,
+      paddingHorizontal: 12,
+    },
+    symptomChipActive: {
+      backgroundColor: '#7F1D1D',
+      borderColor: '#EF4444',
+    },
+    symptomChipText: {
+      fontSize: 12,
+      color: theme.textMuted,
+      fontWeight: '600',
+    },
+    symptomChipTextActive: {
+      color: '#FFFFFF',
+      fontWeight: '700',
+    },
+    stepperContainer: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      backgroundColor: theme.cardInner,
+      borderRadius: 10,
+      padding: 12,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    stepperLabel: {
+      color: theme.textMuted,
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    stepperControls: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 14,
+    },
+    stepperButton: {
+      backgroundColor: theme.primary,
+      width: 36,
+      height: 36,
+      borderRadius: 8,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    stepperButtonDisabled: {
+      backgroundColor: theme.card,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    stepperValue: {
+      color: theme.text,
+      fontSize: 18,
+      fontWeight: '800',
+      minWidth: 28,
+      textAlign: 'center',
+    },
+    submitButton: {
+      backgroundColor: theme.primary,
+      borderRadius: 14,
+      paddingVertical: 18,
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexDirection: 'row',
+      marginTop: 8,
+      shadowColor: theme.primary,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 8,
+      elevation: 4,
+    },
+    submitIcon: {
+      marginRight: 8,
+    },
+    submitButtonText: {
+      color: '#FFFFFF',
+      fontSize: 17,
+      fontWeight: '800',
+      letterSpacing: 0.5,
+    },
+    modalBackdrop: {
+      flex: 1,
+      backgroundColor: theme.modalOverlay,
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: 20,
+    },
+    modalContent: {
+      backgroundColor: theme.modalBg,
+      borderRadius: 16,
+      width: '100%',
+      maxHeight: '75%',
+      padding: 18,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    modalHeaderTitle: {
+      fontSize: 16,
+      fontWeight: '800',
+      color: theme.text,
+      marginBottom: 14,
+      textAlign: 'center',
+    },
+    modalScrollView: {
+      marginBottom: 12,
+    },
+    modalOptionItem: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingVertical: 12,
+      paddingHorizontal: 10,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.border,
+    },
+    modalOptionItemSelected: {
+      backgroundColor: theme.primaryMuted,
+      borderRadius: 8,
+    },
+    modalOptionText: {
+      color: theme.textMuted,
+      fontSize: 14,
+    },
+    modalOptionTextSelected: {
+      color: theme.primary,
+      fontWeight: '700',
+    },
+    modalCloseButton: {
+      backgroundColor: theme.cardInner,
+      paddingVertical: 12,
+      borderRadius: 10,
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    modalCloseButtonText: {
+      color: theme.textMuted,
+      fontSize: 14,
+      fontWeight: '700',
+    },
+    processingOverlay: {
+      flex: 1,
+      backgroundColor: theme.modalOverlay,
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: 24,
+    },
+    processingDialog: {
+      backgroundColor: theme.modalBg,
+      borderRadius: 20,
+      padding: 24,
+      width: '100%',
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    spinner: {
+      marginBottom: 16,
+    },
+    processingMainTitle: {
+      fontSize: 18,
+      fontWeight: '800',
+      color: theme.text,
+      marginBottom: 20,
+      textAlign: 'center',
+    },
+    stageList: {
+      width: '100%',
+      gap: 12,
+      marginBottom: 20,
+    },
+    stageItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+    },
+    stageText: {
+      color: theme.textMuted,
+      fontSize: 13,
+    },
+    stageTextActive: {
+      color: theme.text,
+      fontWeight: '700',
+    },
+    processingFooterNote: {
+      fontSize: 11,
+      color: theme.textPlaceholder,
+      textAlign: 'center',
+      fontStyle: 'italic',
+    },
+  });
+}

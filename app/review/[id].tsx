@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -18,11 +18,14 @@ import {
 import { useSQLiteContext } from 'expo-sqlite';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '../../src/context/ThemeContext';
+import { ThemeColors } from '../../src/constants/theme';
 import {
   getReportById,
   updateReportFields,
   deleteReport,
 } from '../../src/services/reportService';
+import { generateAiExecutiveSummary } from '../../src/services/ai/triageExtractor';
 import type {
   ReportRecord,
   StartPriority,
@@ -53,12 +56,14 @@ interface PriorityOption {
 
 const PRIORITY_OPTIONS: PriorityOption[] = [
   { key: 'ROJO', label: 'ROJO', sublabel: 'Inmediato / Crítico' },
-  { key: 'AMARILLO', label: 'AMARILLO', sublabel: 'Diferido / Urgente' },
-  { key: 'VERDE', label: 'VERDE', sublabel: 'Menor / Ambulatorio' },
+  { key: 'AMARILLO', label: 'AMARILLO', sublabel: 'Urgente / Retrasado' },
+  { key: 'VERDE', label: 'VERDE', sublabel: 'Leve / Ambulatorio' },
   { key: 'NEGRO', label: 'NEGRO', sublabel: 'Sin signos vitales' },
 ];
 
 export default function HumanReviewScreen() {
+  const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const router = useRouter();
   const params = useLocalSearchParams<{ id: string }>();
   const reportId = Array.isArray(params.id) ? params.id[0] : params.id;
@@ -69,6 +74,8 @@ export default function HumanReviewScreen() {
   const [report, setReport] = useState<ReportRecord | null>(null);
 
   // Campos editables
+  const [textRelato, setTextRelato] = useState<string>('');
+  const [executiveSummary, setExecutiveSummary] = useState<string>('');
   const [summary, setSummary] = useState<string>('');
   const [priority, setPriority] = useState<StartPriority>('VERDE');
   const [needs, setNeeds] = useState<DisasterNeedCategory[]>([]);
@@ -97,7 +104,23 @@ export default function HumanReviewScreen() {
         setErrorMessage(`No se encontró el reporte con ID "${reportId}".`);
       } else {
         setReport(foundReport);
+        setTextRelato(foundReport.textRelato || foundReport.extractedSummary || '');
         setSummary(foundReport.extractedSummary || '');
+
+        const initialExec = (foundReport.executiveSummary && foundReport.executiveSummary.trim().length > 25)
+          ? foundReport.executiveSummary
+          : generateAiExecutiveSummary({
+              relatoText: foundReport.textRelato,
+              transcriptText: foundReport.transcript,
+              visionText: foundReport.visualTriageAnalysis || foundReport.visionSeverity,
+              manualInjuries: foundReport.injuriesAndSymptoms,
+              peopleCount: foundReport.reportedPeopleCount,
+              locationReference: foundReport.locationReference,
+              priority: foundReport.triagePriority,
+              needs: foundReport.needs || [],
+            });
+        setExecutiveSummary(initialExec);
+
         setPriority(foundReport.triagePriority || 'VERDE');
         setNeeds(foundReport.needs || []);
         setPeopleCount(foundReport.reportedPeopleCount ?? 0);
@@ -140,6 +163,8 @@ export default function HumanReviewScreen() {
       console.log(`[ReviewScreen] Confirmando y guardando reporte: ${reportId}`);
       updateReportFields(db, reportId, {
         extractedSummary: summary.trim(),
+        executiveSummary: executiveSummary.trim(),
+        textRelato: textRelato.trim(),
         triagePriority: priority,
         needs,
         reportedPeopleCount: peopleCount,
@@ -161,6 +186,8 @@ export default function HumanReviewScreen() {
       console.log(`[ReviewScreen] Confirmando y preparando para compartir: ${reportId}`);
       updateReportFields(db, reportId, {
         extractedSummary: summary.trim(),
+        executiveSummary: executiveSummary.trim(),
+        textRelato: textRelato.trim(),
         triagePriority: priority,
         needs,
         reportedPeopleCount: peopleCount,
@@ -215,9 +242,12 @@ export default function HumanReviewScreen() {
   if (isLoading) {
     return (
       <SafeAreaView style={styles.safeArea}>
-        <StatusBar barStyle="light-content" backgroundColor="#0F172A" />
+        <StatusBar
+          barStyle={theme.isDark ? 'light-content' : 'dark-content'}
+          backgroundColor={theme.background}
+        />
         <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color="#3B82F6" />
+          <ActivityIndicator size="large" color={theme.primary} />
           <Text style={styles.loadingText}>Cargando reporte de triaje...</Text>
         </View>
       </SafeAreaView>
@@ -227,15 +257,18 @@ export default function HumanReviewScreen() {
   if (errorMessage || !report) {
     return (
       <SafeAreaView style={styles.safeArea}>
-        <StatusBar barStyle="light-content" backgroundColor="#0F172A" />
+        <StatusBar
+          barStyle={theme.isDark ? 'light-content' : 'dark-content'}
+          backgroundColor={theme.background}
+        />
         <View style={styles.centerContainer}>
-          <Ionicons name="alert-circle" size={64} color="#EF4444" style={styles.stateIcon} />
+          <Ionicons name="alert-circle" size={64} color={theme.danger} style={styles.stateIcon} />
           <Text style={styles.errorTitle}>Error al Cargar Reporte</Text>
           <Text style={styles.errorDescription}>
             {errorMessage || 'El reporte no fue encontrado en la base de datos local.'}
           </Text>
           <TouchableOpacity style={styles.btnSecondary} onPress={() => router.back()}>
-            <Ionicons name="arrow-back" size={18} color="#F8FAFC" style={styles.btnIconLeft} />
+            <Ionicons name="arrow-back" size={18} color={theme.text} style={styles.btnIconLeft} />
             <Text style={styles.btnSecondaryText}>Volver Atrás</Text>
           </TouchableOpacity>
         </View>
@@ -245,7 +278,10 @@ export default function HumanReviewScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="light-content" backgroundColor="#0F172A" />
+      <StatusBar
+        barStyle={theme.isDark ? 'light-content' : 'dark-content'}
+        backgroundColor={theme.background}
+      />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
@@ -253,7 +289,7 @@ export default function HumanReviewScreen() {
       >
         {/* Banner de Revisión Humana */}
         <View style={styles.noticeBanner}>
-          <Ionicons name="create-outline" size={22} color="#3B82F6" style={styles.noticeIcon} />
+          <Ionicons name="create-outline" size={22} color={theme.primary} style={styles.noticeIcon} />
           <View style={styles.noticeTextContainer}>
             <Text style={styles.noticeTitle}>Validación y Ajuste Humano</Text>
             <Text style={styles.noticeSubtitle}>
@@ -266,41 +302,46 @@ export default function HumanReviewScreen() {
         {report.imageUri && (
           <View style={styles.card}>
             <View style={styles.cardHeaderRow}>
-              <Ionicons name="camera" size={20} color="#3B82F6" style={styles.cardHeaderIcon} />
+              <Ionicons name="camera" size={20} color={theme.primary} style={styles.cardHeaderIcon} />
               <Text style={styles.cardTitle}>Fotografía de la Escena / Lesión</Text>
             </View>
             <Image
               source={{ uri: report.imageUri }}
-              style={{ width: '100%', height: 200, borderRadius: 10, backgroundColor: '#0F172A', marginTop: 6 }}
+              style={{ width: '100%', height: 200, borderRadius: 10, backgroundColor: theme.cardInner, marginTop: 6 }}
               resizeMode="cover"
             />
           </View>
         )}
 
-        {/* 1. Resumen */}
+        {/* 1. Relato de la Emergencia */}
         <View style={styles.card}>
           <View style={styles.cardHeaderRow}>
-            <Ionicons name="document-text-outline" size={20} color="#3B82F6" style={styles.cardHeaderIcon} />
-            <Text style={styles.cardTitle}>1. Resumen de la Situación</Text>
+            <Ionicons name="chatbubble-ellipses-outline" size={20} color={theme.primary} style={styles.cardHeaderIcon} />
+            <Text style={styles.cardTitle}>1. Relato de la Emergencia (Reportante)</Text>
           </View>
           <Text style={styles.fieldDescription}>
-            Descripción concisa extraída por el modelo de lenguaje Llama 3.2. Puede editarla libremente.
+            Descripción original provista por el ciudadano o transcrita de la nota de voz:
           </Text>
           <TextInput
             style={styles.textArea}
             multiline
             numberOfLines={4}
-            value={summary}
-            onChangeText={setSummary}
-            placeholder="Escriba o ajuste el resumen de la emergencia..."
-            placeholderTextColor="#64748B"
+            value={textRelato}
+            onChangeText={(val) => {
+              setTextRelato(val);
+              if (!summary || summary === textRelato) {
+                setSummary(val);
+              }
+            }}
+            placeholder="Escriba o ajuste el relato de la emergencia..."
+            placeholderTextColor={theme.placeholder}
           />
         </View>
 
         {/* Heridas y Síntomas Detectados */}
         <View style={styles.card}>
           <View style={styles.cardHeaderRow}>
-            <Ionicons name="medkit-outline" size={20} color="#EF4444" style={styles.cardHeaderIcon} />
+            <Ionicons name="medkit-outline" size={20} color={theme.danger} style={styles.cardHeaderIcon} />
             <Text style={styles.cardTitle}>Evaluación de Heridas y Síntomas</Text>
           </View>
           <Text style={styles.fieldDescription}>
@@ -313,14 +354,14 @@ export default function HumanReviewScreen() {
             value={injuries}
             onChangeText={setInjuries}
             placeholder="Detalle de heridas, síntomas y condición de los lesionados..."
-            placeholderTextColor="#64748B"
+            placeholderTextColor={theme.placeholder}
           />
         </View>
 
         {/* 2. Prioridad START */}
         <View style={styles.card}>
           <View style={styles.cardHeaderRow}>
-            <Ionicons name="flag-outline" size={20} color="#3B82F6" style={styles.cardHeaderIcon} />
+            <Ionicons name="flag-outline" size={20} color={theme.primary} style={styles.cardHeaderIcon} />
             <Text style={styles.cardTitle}>2. Prioridad START</Text>
           </View>
           <Text style={styles.fieldDescription}>
@@ -352,7 +393,7 @@ export default function HumanReviewScreen() {
         {/* 3. Necesidades */}
         <View style={styles.card}>
           <View style={styles.cardHeaderRow}>
-            <Ionicons name="grid-outline" size={20} color="#3B82F6" style={styles.cardHeaderIcon} />
+            <Ionicons name="grid-outline" size={20} color={theme.primary} style={styles.cardHeaderIcon} />
             <Text style={styles.cardTitle}>3. Necesidades Esfera Identificadas</Text>
           </View>
           <Text style={styles.fieldDescription}>
@@ -391,7 +432,7 @@ export default function HumanReviewScreen() {
         {/* 4. Personas afectadas */}
         <View style={styles.card}>
           <View style={styles.cardHeaderRow}>
-            <Ionicons name="people-outline" size={20} color="#3B82F6" style={styles.cardHeaderIcon} />
+            <Ionicons name="people-outline" size={20} color={theme.primary} style={styles.cardHeaderIcon} />
             <Text style={styles.cardTitle}>4. Personas Afectadas</Text>
           </View>
           <Text style={styles.fieldDescription}>
@@ -409,7 +450,7 @@ export default function HumanReviewScreen() {
               <Ionicons
                 name="remove"
                 size={22}
-                color={peopleCount <= 0 ? '#475569' : '#F8FAFC'}
+                color={peopleCount <= 0 ? (theme.isDark ? '#475569' : '#94A3B8') : '#FFFFFF'}
               />
             </TouchableOpacity>
 
@@ -425,7 +466,7 @@ export default function HumanReviewScreen() {
               style={styles.stepperBtn}
               onPress={handleIncrementPeople}
             >
-              <Ionicons name="add" size={22} color="#F8FAFC" />
+              <Ionicons name="add" size={22} color="#FFFFFF" />
             </TouchableOpacity>
           </View>
         </View>
@@ -433,7 +474,7 @@ export default function HumanReviewScreen() {
         {/* 5. Ubicación */}
         <View style={styles.card}>
           <View style={styles.cardHeaderRow}>
-            <Ionicons name="location-outline" size={20} color="#3B82F6" style={styles.cardHeaderIcon} />
+            <Ionicons name="location-outline" size={20} color={theme.primary} style={styles.cardHeaderIcon} />
             <Text style={styles.cardTitle}>5. Ubicación de Referencia</Text>
           </View>
           <Text style={styles.fieldDescription}>
@@ -444,14 +485,14 @@ export default function HumanReviewScreen() {
             value={location}
             onChangeText={setLocation}
             placeholder="Ejemplo: Cerca de la escuela primaria de Chiriquí..."
-            placeholderTextColor="#64748B"
+            placeholderTextColor={theme.placeholder}
           />
         </View>
 
         {/* 6. Campos faltantes (read-only) */}
         <View style={styles.card}>
           <View style={styles.cardHeaderRow}>
-            <Ionicons name="help-circle-outline" size={20} color="#F59E0B" style={styles.cardHeaderIcon} />
+            <Ionicons name="help-circle-outline" size={20} color={theme.warning} style={styles.cardHeaderIcon} />
             <Text style={styles.cardTitle}>6. Campos Faltantes (Incompletitud)</Text>
           </View>
           <Text style={styles.fieldDescription}>
@@ -461,19 +502,52 @@ export default function HumanReviewScreen() {
             <View style={styles.missingTagsContainer}>
               {report.missingFields.map((field, idx) => (
                 <View key={idx} style={styles.missingTagBadge}>
-                  <Ionicons name="alert-circle-outline" size={16} color="#F59E0B" style={styles.missingTagIcon} />
+                  <Ionicons name="alert-circle-outline" size={16} color={theme.warning} style={styles.missingTagIcon} />
                   <Text style={styles.missingTagText}>{field}</Text>
                 </View>
               ))}
             </View>
           ) : (
             <View style={styles.missingEmptyBadge}>
-              <Ionicons name="checkmark-circle-outline" size={18} color="#22C55E" style={styles.missingTagIcon} />
+              <Ionicons name="checkmark-circle-outline" size={18} color={theme.success} style={styles.missingTagIcon} />
               <Text style={styles.missingEmptyText}>
                 No se detectaron campos faltantes críticos en la inferencia.
               </Text>
             </View>
           )}
+        </View>
+
+        {/* Resumen Ejecutivo IA para Rescatistas (Párrafo Consolidado Multimodal) */}
+        <View style={[styles.card, styles.executiveSummaryCard]}>
+          <View style={styles.cardHeaderRow}>
+            <View style={styles.aiBadge}>
+              <Ionicons name="hardware-chip-outline" size={15} color="#FFFFFF" />
+              <Text style={styles.aiBadgeText}>IA Local QVAC</Text>
+            </View>
+            <Text style={[styles.cardTitle, { flex: 1, color: theme.primary }]}>
+              Resumen Ejecutivo IA (Rescatistas)
+            </Text>
+          </View>
+          <Text style={styles.fieldDescription}>
+            Párrafo consolidado que unifica lo observado en cámara, la transcripción del audio y el relato, redactado como informe operativo para la brigada:
+          </Text>
+          <TextInput
+            style={[styles.textArea, styles.executiveSummaryInput]}
+            multiline
+            numberOfLines={6}
+            value={executiveSummary}
+            onChangeText={setExecutiveSummary}
+            placeholder="Resumen ejecutivo integral para los rescatistas..."
+            placeholderTextColor={theme.placeholder}
+          />
+
+          {/* Advertencia explícita de IA */}
+          <View style={styles.aiDisclaimerBox}>
+            <Ionicons name="information-circle" size={18} color={theme.primary} />
+            <Text style={styles.aiDisclaimerText}>
+              Síntesis generada automáticamente por IA on-device (Llama 3.2 + VisionPsy + Whisper). No es 100% precisa; ajuste cualquier detalle antes de confirmar.
+            </Text>
+          </View>
         </View>
 
         {/* 7. Auditoría (collapsible section, collapsed by default) */}
@@ -484,20 +558,20 @@ export default function HumanReviewScreen() {
             onPress={() => setIsAuditExpanded((prev) => !prev)}
           >
             <View style={styles.auditHeaderLeft}>
-              <Ionicons name="analytics-outline" size={20} color="#3B82F6" style={styles.cardHeaderIcon} />
+              <Ionicons name="analytics-outline" size={20} color={theme.primary} style={styles.cardHeaderIcon} />
               <Text style={styles.cardTitle}>7. Auditoría y Trazabilidad IA</Text>
             </View>
             <Ionicons
               name={isAuditExpanded ? 'chevron-up' : 'chevron-down'}
               size={20}
-              color="#94A3B8"
+              color={theme.textMuted}
             />
           </TouchableOpacity>
 
           {isAuditExpanded && (
             <View style={styles.auditContent}>
               <View style={styles.qvacLocalBadge}>
-                <Ionicons name="shield-checkmark" size={16} color="#22C55E" style={styles.qvacBadgeIcon} />
+                <Ionicons name="shield-checkmark" size={16} color={theme.success} style={styles.qvacBadgeIcon} />
                 <Text style={styles.qvacLocalBadgeText}>
                   ✅ Inferencia 100% Local — QVAC
                 </Text>
@@ -575,414 +649,458 @@ export default function HumanReviewScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#0F172A',
-  },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 48,
-  },
-  centerContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-  },
-  stateIcon: {
-    marginBottom: 16,
-  },
-  loadingText: {
-    color: '#94A3B8',
-    fontSize: 16,
-    fontWeight: '600',
-    marginTop: 14,
-  },
-  errorTitle: {
-    color: '#F8FAFC',
-    fontSize: 20,
-    fontWeight: '800',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  errorDescription: {
-    color: '#94A3B8',
-    fontSize: 14,
-    textAlign: 'center',
-    marginBottom: 24,
-    lineHeight: 20,
-  },
-  noticeBanner: {
-    backgroundColor: '#1E293B',
-    borderColor: '#3B82F6',
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  noticeIcon: {
-    marginRight: 12,
-  },
-  noticeTextContainer: {
-    flex: 1,
-  },
-  noticeTitle: {
-    color: '#F8FAFC',
-    fontSize: 15,
-    fontWeight: '700',
-    marginBottom: 2,
-  },
-  noticeSubtitle: {
-    color: '#94A3B8',
-    fontSize: 12,
-    lineHeight: 16,
-  },
-  card: {
-    backgroundColor: '#1E293B',
-    borderColor: '#334155',
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-  },
-  cardHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  cardHeaderIcon: {
-    marginRight: 8,
-  },
-  cardTitle: {
-    color: '#F8FAFC',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  fieldDescription: {
-    color: '#94A3B8',
-    fontSize: 12,
-    marginBottom: 12,
-    lineHeight: 17,
-  },
-  textArea: {
-    backgroundColor: '#0F172A',
-    borderColor: '#334155',
-    borderWidth: 1,
-    borderRadius: 8,
-    color: '#F8FAFC',
-    padding: 12,
-    fontSize: 14,
-    minHeight: 90,
-    textAlignVertical: 'top',
-    lineHeight: 20,
-  },
-  input: {
-    backgroundColor: '#0F172A',
-    borderColor: '#334155',
-    borderWidth: 1,
-    borderRadius: 8,
-    color: '#F8FAFC',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
-  },
-  priorityGrid: {
-    gap: 10,
-  },
-  priorityBadge: {
-    borderRadius: 10,
-    padding: 14,
-  },
-  priorityBadgeRed: {
-    backgroundColor: '#EF4444',
-  },
-  priorityBadgeYellow: {
-    backgroundColor: '#F59E0B',
-  },
-  priorityBadgeGreen: {
-    backgroundColor: '#22C55E',
-  },
-  priorityBadgeBlack: {
-    backgroundColor: '#1F2937',
-  },
-  priorityBadgeSelected: {
-    borderWidth: 3,
-    borderColor: '#FFFFFF',
-    elevation: 6,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.4,
-    shadowRadius: 4,
-  },
-  priorityBadgeUnselected: {
-    borderWidth: 1,
-    borderColor: '#334155',
-    opacity: 0.65,
-  },
-  priorityHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  priorityBadgeLabel: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  priorityBadgeSublabel: {
-    color: '#F8FAFC',
-    fontSize: 12,
-    fontWeight: '500',
-    opacity: 0.9,
-  },
-  chipsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  needChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderWidth: 1,
-  },
-  needChipSelected: {
-    backgroundColor: '#2563EB',
-    borderColor: '#3B82F6',
-  },
-  needChipUnselected: {
-    backgroundColor: '#0F172A',
-    borderColor: '#334155',
-  },
-  chipCheckIcon: {
-    marginRight: 6,
-  },
-  needChipText: {
-    fontSize: 13,
-  },
-  needChipTextSelected: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-  },
-  needChipTextUnselected: {
-    color: '#94A3B8',
-    fontWeight: '500',
-  },
-  stepperContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 16,
-    marginTop: 4,
-  },
-  stepperBtn: {
-    backgroundColor: '#3B82F6',
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  stepperBtnDisabled: {
-    backgroundColor: '#1E293B',
-    borderColor: '#334155',
-    borderWidth: 1,
-  },
-  stepperInput: {
-    backgroundColor: '#0F172A',
-    borderColor: '#334155',
-    borderWidth: 1,
-    borderRadius: 8,
-    color: '#F8FAFC',
-    fontSize: 22,
-    fontWeight: '800',
-    textAlign: 'center',
-    width: 100,
-    height: 48,
-  },
-  missingTagsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  missingTagBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#451A03',
-    borderColor: '#B45309',
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  missingTagIcon: {
-    marginRight: 6,
-  },
-  missingTagText: {
-    color: '#FDE68A',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  missingEmptyBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#052E16',
-    borderColor: '#166534',
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  missingEmptyText: {
-    color: '#86EFAC',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  auditToggleRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  auditHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  auditContent: {
-    marginTop: 14,
-    borderTopColor: '#334155',
-    borderTopWidth: 1,
-    paddingTop: 14,
-    gap: 12,
-  },
-  qvacLocalBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#064E3B',
-    borderColor: '#059669',
-    borderWidth: 1,
-    borderRadius: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    alignSelf: 'flex-start',
-  },
-  qvacBadgeIcon: {
-    marginRight: 6,
-  },
-  qvacLocalBadgeText: {
-    color: '#A7F3D0',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  auditFieldBox: {
-    backgroundColor: '#0F172A',
-    borderColor: '#334155',
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 10,
-  },
-  auditFieldLabel: {
-    color: '#94A3B8',
-    fontSize: 11,
-    fontWeight: '700',
-    marginBottom: 4,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  auditFieldValue: {
-    color: '#F8FAFC',
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  auditTimeValue: {
-    color: '#38BDF8',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  monospaceContainer: {
-    backgroundColor: '#020617',
-    borderRadius: 6,
-    padding: 8,
-    marginTop: 4,
-    borderColor: '#1E293B',
-    borderWidth: 1,
-  },
-  monospaceText: {
-    color: '#38BDF8',
-    fontSize: 12,
-    fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' }),
-    lineHeight: 16,
-  },
-  actionsContainer: {
-    marginTop: 8,
-    gap: 12,
-  },
-  btnPrimary: {
-    backgroundColor: '#22C55E',
-    borderRadius: 10,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  btnPrimaryText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  btnShare: {
-    backgroundColor: '#3B82F6',
-    borderRadius: 10,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  btnShareText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  btnDanger: {
-    backgroundColor: 'transparent',
-    borderColor: '#EF4444',
-    borderWidth: 1.5,
-    borderRadius: 10,
-    paddingVertical: 13,
-    paddingHorizontal: 16,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  btnDangerText: {
-    color: '#EF4444',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  btnSecondary: {
-    backgroundColor: '#1E293B',
-    borderColor: '#334155',
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 18,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  btnSecondaryText: {
-    color: '#F8FAFC',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  btnIconLeft: {
-    marginRight: 8,
-  },
-});
+const createStyles = (theme: ThemeColors) =>
+  StyleSheet.create({
+    safeArea: {
+      flex: 1,
+      backgroundColor: theme.background,
+    },
+    scrollContent: {
+      padding: 16,
+      paddingBottom: 48,
+    },
+    centerContainer: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: 24,
+    },
+    stateIcon: {
+      marginBottom: 16,
+    },
+    loadingText: {
+      color: theme.textMuted,
+      fontSize: 16,
+      fontWeight: '600',
+      marginTop: 14,
+    },
+    errorTitle: {
+      color: theme.text,
+      fontSize: 20,
+      fontWeight: '800',
+      marginBottom: 8,
+      textAlign: 'center',
+    },
+    errorDescription: {
+      color: theme.textMuted,
+      fontSize: 14,
+      textAlign: 'center',
+      marginBottom: 24,
+      lineHeight: 20,
+    },
+    noticeBanner: {
+      backgroundColor: theme.card,
+      borderColor: theme.primary,
+      borderWidth: 1,
+      borderRadius: 12,
+      padding: 14,
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 16,
+    },
+    noticeIcon: {
+      marginRight: 12,
+    },
+    noticeTextContainer: {
+      flex: 1,
+    },
+    noticeTitle: {
+      color: theme.text,
+      fontSize: 15,
+      fontWeight: '700',
+      marginBottom: 2,
+    },
+    noticeSubtitle: {
+      color: theme.textMuted,
+      fontSize: 12,
+      lineHeight: 16,
+    },
+    card: {
+      backgroundColor: theme.card,
+      borderColor: theme.border,
+      borderWidth: 1,
+      borderRadius: 12,
+      padding: 16,
+      marginBottom: 16,
+    },
+    executiveSummaryCard: {
+      borderColor: theme.primary,
+      borderWidth: 1.5,
+      backgroundColor: theme.card,
+    },
+    aiBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      backgroundColor: theme.primary,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: 6,
+      marginRight: 8,
+    },
+    aiBadgeText: {
+      color: '#FFFFFF',
+      fontSize: 11,
+      fontWeight: '700',
+      letterSpacing: 0.3,
+    },
+    executiveSummaryInput: {
+      minHeight: 120,
+      lineHeight: 22,
+      marginBottom: 12,
+    },
+    aiDisclaimerBox: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 8,
+      backgroundColor: theme.cardInner,
+      padding: 10,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    aiDisclaimerText: {
+      flex: 1,
+      color: theme.textMuted,
+      fontSize: 12,
+      lineHeight: 16,
+      fontStyle: 'italic',
+    },
+    cardHeaderRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 6,
+    },
+    cardHeaderIcon: {
+      marginRight: 8,
+    },
+    cardTitle: {
+      color: theme.text,
+      fontSize: 16,
+      fontWeight: '700',
+    },
+    fieldDescription: {
+      color: theme.textMuted,
+      fontSize: 12,
+      marginBottom: 12,
+      lineHeight: 17,
+    },
+    textArea: {
+      backgroundColor: theme.cardInner,
+      borderColor: theme.border,
+      borderWidth: 1,
+      borderRadius: 8,
+      color: theme.text,
+      padding: 12,
+      fontSize: 14,
+      minHeight: 90,
+      textAlignVertical: 'top',
+      lineHeight: 20,
+    },
+    input: {
+      backgroundColor: theme.cardInner,
+      borderColor: theme.border,
+      borderWidth: 1,
+      borderRadius: 8,
+      color: theme.text,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      fontSize: 14,
+    },
+    priorityGrid: {
+      gap: 10,
+    },
+    priorityBadge: {
+      borderRadius: 10,
+      padding: 14,
+    },
+    priorityBadgeRed: {
+      backgroundColor: '#EF4444',
+    },
+    priorityBadgeYellow: {
+      backgroundColor: '#F59E0B',
+    },
+    priorityBadgeGreen: {
+      backgroundColor: '#22C55E',
+    },
+    priorityBadgeBlack: {
+      backgroundColor: '#1F2937',
+    },
+    priorityBadgeSelected: {
+      borderWidth: 3,
+      borderColor: theme.isDark ? '#FFFFFF' : '#0F172A',
+      elevation: 6,
+      shadowColor: '#000000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.4,
+      shadowRadius: 4,
+    },
+    priorityBadgeUnselected: {
+      borderWidth: 1,
+      borderColor: theme.border,
+      opacity: 0.65,
+    },
+    priorityHeaderRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 4,
+    },
+    priorityBadgeLabel: {
+      color: '#FFFFFF',
+      fontSize: 16,
+      fontWeight: '800',
+      letterSpacing: 0.5,
+    },
+    priorityBadgeSublabel: {
+      color: '#F8FAFC',
+      fontSize: 12,
+      fontWeight: '500',
+      opacity: 0.9,
+    },
+    chipsContainer: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
+    },
+    needChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderRadius: 20,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderWidth: 1,
+    },
+    needChipSelected: {
+      backgroundColor: theme.primary,
+      borderColor: theme.primary,
+    },
+    needChipUnselected: {
+      backgroundColor: theme.cardInner,
+      borderColor: theme.border,
+    },
+    chipCheckIcon: {
+      marginRight: 6,
+    },
+    needChipText: {
+      fontSize: 13,
+    },
+    needChipTextSelected: {
+      color: '#FFFFFF',
+      fontWeight: '700',
+    },
+    needChipTextUnselected: {
+      color: theme.textMuted,
+      fontWeight: '500',
+    },
+    stepperContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 16,
+      marginTop: 4,
+    },
+    stepperBtn: {
+      backgroundColor: theme.primary,
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    stepperBtnDisabled: {
+      backgroundColor: theme.isDark ? '#1E293B' : '#E2E8F0',
+      borderColor: theme.border,
+      borderWidth: 1,
+    },
+    stepperInput: {
+      backgroundColor: theme.cardInner,
+      borderColor: theme.border,
+      borderWidth: 1,
+      borderRadius: 8,
+      color: theme.text,
+      fontSize: 22,
+      fontWeight: '800',
+      textAlign: 'center',
+      width: 100,
+      height: 48,
+    },
+    missingTagsContainer: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
+    },
+    missingTagBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: theme.isDark ? '#451A03' : '#FEF3C7',
+      borderColor: theme.isDark ? '#B45309' : '#F59E0B',
+      borderWidth: 1,
+      borderRadius: 8,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+    },
+    missingTagIcon: {
+      marginRight: 6,
+    },
+    missingTagText: {
+      color: theme.isDark ? '#FDE68A' : '#92400E',
+      fontSize: 12,
+      fontWeight: '600',
+    },
+    missingEmptyBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: theme.isDark ? '#052E16' : '#DCFCE7',
+      borderColor: theme.isDark ? '#166534' : '#22C55E',
+      borderWidth: 1,
+      borderRadius: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+    },
+    missingEmptyText: {
+      color: theme.isDark ? '#86EFAC' : '#166534',
+      fontSize: 13,
+      fontWeight: '600',
+    },
+    auditToggleRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    auditHeaderLeft: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    auditContent: {
+      marginTop: 14,
+      borderTopColor: theme.border,
+      borderTopWidth: 1,
+      paddingTop: 14,
+      gap: 12,
+    },
+    qvacLocalBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: theme.isDark ? '#064E3B' : '#DCFCE7',
+      borderColor: theme.isDark ? '#059669' : '#22C55E',
+      borderWidth: 1,
+      borderRadius: 6,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      alignSelf: 'flex-start',
+    },
+    qvacBadgeIcon: {
+      marginRight: 6,
+    },
+    qvacLocalBadgeText: {
+      color: theme.isDark ? '#A7F3D0' : '#166534',
+      fontSize: 12,
+      fontWeight: '700',
+    },
+    auditFieldBox: {
+      backgroundColor: theme.cardInner,
+      borderColor: theme.border,
+      borderWidth: 1,
+      borderRadius: 8,
+      padding: 10,
+    },
+    auditFieldLabel: {
+      color: theme.textMuted,
+      fontSize: 11,
+      fontWeight: '700',
+      marginBottom: 4,
+      textTransform: 'uppercase',
+      letterSpacing: 0.5,
+    },
+    auditFieldValue: {
+      color: theme.text,
+      fontSize: 13,
+      lineHeight: 18,
+    },
+    auditTimeValue: {
+      color: theme.info,
+      fontSize: 14,
+      fontWeight: '700',
+    },
+    monospaceContainer: {
+      backgroundColor: theme.cardInner,
+      borderRadius: 6,
+      padding: 8,
+      marginTop: 4,
+      borderColor: theme.border,
+      borderWidth: 1,
+    },
+    monospaceText: {
+      color: theme.isDark ? '#38BDF8' : theme.primary,
+      fontSize: 12,
+      fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' }),
+      lineHeight: 16,
+    },
+    actionsContainer: {
+      marginTop: 8,
+      gap: 12,
+    },
+    btnPrimary: {
+      backgroundColor: theme.success,
+      borderRadius: 10,
+      paddingVertical: 14,
+      paddingHorizontal: 16,
+      flexDirection: 'row',
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    btnPrimaryText: {
+      color: '#FFFFFF',
+      fontSize: 16,
+      fontWeight: '800',
+    },
+    btnShare: {
+      backgroundColor: theme.primary,
+      borderRadius: 10,
+      paddingVertical: 14,
+      paddingHorizontal: 16,
+      flexDirection: 'row',
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    btnShareText: {
+      color: '#FFFFFF',
+      fontSize: 16,
+      fontWeight: '800',
+    },
+    btnDanger: {
+      backgroundColor: 'transparent',
+      borderColor: theme.danger,
+      borderWidth: 1.5,
+      borderRadius: 10,
+      paddingVertical: 13,
+      paddingHorizontal: 16,
+      flexDirection: 'row',
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    btnDangerText: {
+      color: theme.danger,
+      fontSize: 15,
+      fontWeight: '700',
+    },
+    btnSecondary: {
+      backgroundColor: theme.card,
+      borderColor: theme.border,
+      borderWidth: 1,
+      borderRadius: 8,
+      paddingVertical: 10,
+      paddingHorizontal: 18,
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    btnSecondaryText: {
+      color: theme.text,
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    btnIconLeft: {
+      marginRight: 8,
+    },
+  });

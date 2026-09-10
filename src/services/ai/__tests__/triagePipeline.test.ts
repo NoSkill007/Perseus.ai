@@ -93,4 +93,26 @@ describe('Perseus AI - Local Triage Pipeline (Persona B)', () => {
     expect(result.needs).toContain('ALBERGUE');
     expect(result.isLocalInference).toBe(true);
   });
+
+  it('debe generar un resumen ejecutivo de IA completo para rescatistas sin omitir detalles y preservar el relato del usuario', async () => {
+    const input = {
+      textRelato: 'Colapsó el puente sobre el río Caldera en Boquete. Hay 3 heridos con fracturas expuestas y traumatismo, 2 niños atrapados en el vehículo, necesitamos ambulancias y equipo hidráulico de rescate inmediatamente.',
+      province: 'Chiriquí',
+      district: 'Boquete',
+      operatorDeviceId: 'UNIT-TEST-DEVICE-07',
+    };
+
+    const result = await runTriagePipeline(input);
+
+    expect(result.textRelato).toBe(input.textRelato);
+    expect(result.executiveSummary).toBeDefined();
+    expect(typeof result.executiveSummary).toBe('string');
+    expect(result.executiveSummary!.length).toBeGreaterThan(50);
+    // Verificar que incluya detalles críticos consolidados
+    expect(result.executiveSummary).toMatch(/rescate|atrapad|herid|fractura|Boquete/i);
+    expect(result.triagePriority).toBe('ROJO');
+    expect(result.needs).toContain('ACCESO_RESCATE');
+    expect(result.needs).toContain('SALUD');
+  });
 });
+

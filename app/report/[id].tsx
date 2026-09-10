@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -15,7 +15,10 @@ import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
+import { useTheme } from '../../src/context/ThemeContext';
+import { ThemeColors } from '../../src/constants/theme';
 import { getReportById, deleteReport } from '../../src/services/reportService';
+import { generateAiExecutiveSummary } from '../../src/services/ai/triageExtractor';
 import type { ReportRecord, StartPriority } from '../../src/types/triageTypes';
 
 const PRIORITY_COLORS: Record<StartPriority, string> = {
@@ -46,6 +49,8 @@ const STATUS_STEPS = [
 ];
 
 export default function ReportDetailScreen() {
+  const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const db = useSQLiteContext();
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -56,6 +61,23 @@ export default function ReportDetailScreen() {
   const [soundInstance, setSoundInstance] = useState<Audio.Sound | null>(null);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [audioLoading, setAudioLoading] = useState(false);
+
+  const displayExecutiveSummary = useMemo(() => {
+    if (!report) return '';
+    if (report.executiveSummary && report.executiveSummary.trim().length > 25) {
+      return report.executiveSummary;
+    }
+    return generateAiExecutiveSummary({
+      relatoText: report.textRelato,
+      transcriptText: report.transcript,
+      visionText: report.visualTriageAnalysis || report.visionSeverity,
+      manualInjuries: report.injuriesAndSymptoms,
+      peopleCount: report.reportedPeopleCount,
+      locationReference: report.locationReference,
+      priority: report.triagePriority,
+      needs: report.needs || [],
+    });
+  }, [report]);
 
   useFocusEffect(
     useCallback(() => {
@@ -144,7 +166,7 @@ export default function ReportDetailScreen() {
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
-        <ActivityIndicator size="large" color="#3B82F6" style={{ marginTop: 100 }} />
+        <ActivityIndicator size="large" color={theme.primary} style={{ marginTop: 100 }} />
       </SafeAreaView>
     );
   }
@@ -153,7 +175,7 @@ export default function ReportDetailScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.errorContainer}>
-          <Ionicons name="alert-circle" size={48} color="#EF4444" />
+          <Ionicons name="alert-circle" size={48} color={theme.danger} />
           <Text style={styles.errorText}>Reporte no encontrado</Text>
           <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
             <Text style={styles.backButtonText}>Volver</Text>
@@ -191,7 +213,7 @@ export default function ReportDetailScreen() {
             return (
               <View key={step.key} style={styles.timelineStep}>
                 <View style={[styles.timelineDot, isActive && styles.timelineDotActive, isCurrent && styles.timelineDotCurrent]}>
-                  <Ionicons name={step.icon} size={14} color={isActive ? '#F8FAFC' : '#64748B'} />
+                  <Ionicons name={step.icon} size={14} color={isActive ? '#FFFFFF' : theme.textMuted} />
                 </View>
                 {i < STATUS_STEPS.length - 1 && (
                   <View style={[styles.timelineLine, isActive && styles.timelineLineActive]} />
@@ -207,7 +229,7 @@ export default function ReportDetailScreen() {
         {/* Banner de Acuse de Recibo (ACK) Confirmado */}
         {Boolean(report.ackReceived || report.status === 'enviado' || report.status === 'recibido') && (
           <View style={styles.ackBannerCard}>
-            <Ionicons name="shield-checkmark" size={20} color="#22C55E" />
+            <Ionicons name="shield-checkmark" size={20} color={theme.success} />
             <View style={{ flex: 1, marginLeft: 8 }}>
               <Text style={styles.ackBannerTitle}>✅ Acuse de Recibo (ACK) Confirmado</Text>
               <Text style={styles.ackBannerSubtitle}>
@@ -221,7 +243,7 @@ export default function ReportDetailScreen() {
         {report.imageUri && (
           <View style={styles.card}>
             <View style={styles.cardHeaderRow}>
-              <Ionicons name="camera" size={20} color="#3B82F6" />
+              <Ionicons name="camera" size={20} color={theme.primary} />
               <Text style={styles.cardTitleInline}>Foto de la Escena / Lesión</Text>
             </View>
             <TouchableOpacity
@@ -235,7 +257,7 @@ export default function ReportDetailScreen() {
                 resizeMode="cover"
               />
               <View style={styles.imageOverlayBadge}>
-                <Ionicons name="scan-outline" size={14} color="#F8FAFC" />
+                <Ionicons name="scan-outline" size={14} color="#FFFFFF" />
                 <Text style={styles.imageOverlayText}>Tocar para ampliar</Text>
               </View>
             </TouchableOpacity>
@@ -244,10 +266,10 @@ export default function ReportDetailScreen() {
 
         {/* NOTA DE VOZ GRABADA (Reproductor interactivo para Rescatista y Ciudadano) */}
         {report.audioUri && (
-          <View style={[styles.card, { borderColor: '#4F46E5', borderWidth: 1 }]}>
+          <View style={[styles.card, { borderColor: theme.primary, borderWidth: 1 }]}>
             <View style={styles.cardHeaderRow}>
-              <Ionicons name="mic" size={20} color="#818CF8" />
-              <Text style={[styles.cardTitleInline, { color: '#C7D2FE' }]}>
+              <Ionicons name="mic" size={20} color={theme.primary} />
+              <Text style={[styles.cardTitleInline, { color: theme.primary }]}>
                 Nota de Voz Grabada en la Escena
               </Text>
             </View>
@@ -261,9 +283,9 @@ export default function ReportDetailScreen() {
               activeOpacity={0.8}
             >
               {audioLoading ? (
-                <ActivityIndicator size="small" color="#F8FAFC" />
+                <ActivityIndicator size="small" color="#FFFFFF" />
               ) : (
-                <Ionicons name={isPlayingAudio ? 'pause-circle' : 'play-circle'} size={24} color="#F8FAFC" />
+                <Ionicons name={isPlayingAudio ? 'pause-circle' : 'play-circle'} size={24} color="#FFFFFF" />
               )}
               <Text style={styles.audioPlayButtonText}>
                 {isPlayingAudio ? 'Pausar Audio' : 'Escuchar Nota de Voz'}
@@ -272,28 +294,33 @@ export default function ReportDetailScreen() {
           </View>
         )}
 
-        {/* Resumen */}
+        {/* Relato de la Emergencia */}
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>📝 Resumen</Text>
-          <Text style={styles.cardContent}>{report.extractedSummary}</Text>
+          <View style={styles.cardHeaderRow}>
+            <Ionicons name="chatbubble-ellipses-outline" size={20} color={theme.primary} />
+            <Text style={styles.cardTitleInline}>Relato de la Emergencia</Text>
+          </View>
+          <Text style={styles.cardContent}>
+            {report.textRelato || (report.transcript ? `[Grabado en nota de voz]: "${report.transcript}"` : report.extractedSummary)}
+          </Text>
         </View>
 
         {/* HERIDAS Y SÍNTOMAS (Evaluación Prehospitalaria para Rescatistas) */}
-        <View style={[styles.card, { borderColor: '#7F1D1D', borderWidth: 1 }]}>
+        <View style={[styles.card, { borderColor: theme.danger, borderWidth: 1 }]}>
           <View style={styles.cardHeaderRow}>
-            <Ionicons name="medkit" size={20} color="#EF4444" />
-            <Text style={[styles.cardTitleInline, { color: '#FCA5A5' }]}>
+            <Ionicons name="medkit" size={20} color={theme.danger} />
+            <Text style={[styles.cardTitleInline, { color: theme.danger }]}>
               Heridas y Síntomas Detectados
             </Text>
           </View>
-          <Text style={[styles.cardContent, { color: '#F8FAFC', fontWeight: '600' }]}>
+          <Text style={[styles.cardContent, { color: theme.text, fontWeight: '600' }]}>
             {report.injuriesAndSymptoms || 'No se detallaron heridas específicas en el reporte inicial.'}
           </Text>
 
           {/* Recomendación Operativa para Brigada */}
           {(report.triagePriority === 'ROJO' || report.triagePriority === 'AMARILLO') && (
             <View style={styles.medicalAlertBox}>
-              <Ionicons name="alert-circle" size={18} color="#EF4444" />
+              <Ionicons name="alert-circle" size={18} color={theme.danger} />
               <Text style={styles.medicalAlertText}>
                 {report.triagePriority === 'ROJO'
                   ? '⚠️ Requiere soporte vital inmediato, equipo de inmovilización y evacuación prioritaria.'
@@ -307,7 +334,7 @@ export default function ReportDetailScreen() {
         {(report.visualTriageAnalysis || report.visionSeverity) && (
           <View style={styles.card}>
             <View style={styles.cardHeaderRow}>
-              <Ionicons name="eye" size={20} color="#3B82F6" />
+              <Ionicons name="eye" size={20} color={theme.primary} />
               <Text style={styles.cardTitleInline}>Análisis Visual de Severidad (IA)</Text>
             </View>
             <Text style={styles.cardContent}>
@@ -372,7 +399,7 @@ export default function ReportDetailScreen() {
             <Text style={styles.cardTitle}>⚠️ Campos Faltantes</Text>
             {report.missingFields.map((field, i) => (
               <View key={i} style={styles.missingItem}>
-                <Ionicons name="alert-circle-outline" size={16} color="#F59E0B" />
+                <Ionicons name="alert-circle-outline" size={16} color={theme.warning} />
                 <Text style={styles.missingText}>{field}</Text>
               </View>
             ))}
@@ -428,13 +455,38 @@ export default function ReportDetailScreen() {
           </View>
         )}
 
+        {/* Resumen Ejecutivo IA para Rescatistas (Párrafo Consolidado Multimodal) */}
+        <View style={[styles.card, styles.executiveSummaryCard]}>
+          <View style={styles.cardHeaderRow}>
+            <View style={styles.aiBadge}>
+              <Ionicons name="hardware-chip-outline" size={15} color="#FFFFFF" />
+              <Text style={styles.aiBadgeText}>IA Local QVAC</Text>
+            </View>
+            <Text style={[styles.cardTitleInline, { flex: 1, color: theme.primary }]}>
+              Resumen Ejecutivo IA (Rescatistas)
+            </Text>
+          </View>
+
+          <Text style={styles.executiveSummaryText}>
+            {displayExecutiveSummary}
+          </Text>
+
+          {/* Advertencia explícita de IA */}
+          <View style={styles.aiDisclaimerBox}>
+            <Ionicons name="information-circle" size={18} color={theme.primary} />
+            <Text style={styles.aiDisclaimerText}>
+              Síntesis generada automáticamente por IA on-device (Llama 3.2 + VisionPsy + Whisper). No es 100% precisa; el personal de rescate debe verificar y validar directamente en la escena.
+            </Text>
+          </View>
+        </View>
+
         {/* Auditoría IA */}
         <TouchableOpacity
           style={styles.auditToggle}
           onPress={() => setShowAudit(!showAudit)}
         >
           <Text style={styles.auditToggleText}>🔍 Auditoría IA</Text>
-          <Ionicons name={showAudit ? 'chevron-up' : 'chevron-down'} size={20} color="#94A3B8" />
+          <Ionicons name={showAudit ? 'chevron-up' : 'chevron-down'} size={20} color={theme.textMuted} />
         </TouchableOpacity>
 
         {showAudit && (
@@ -462,7 +514,7 @@ export default function ReportDetailScreen() {
             )}
 
             <View style={styles.localBadge}>
-              <Ionicons name="shield-checkmark" size={16} color="#22C55E" />
+              <Ionicons name="shield-checkmark" size={16} color={theme.success} />
               <Text style={styles.localBadgeText}>
                 {report.isLocalInference ? 'Inferencia 100% Local — QVAC' : 'Modo fallback'}
               </Text>
@@ -477,7 +529,7 @@ export default function ReportDetailScreen() {
               style={styles.editButton}
               onPress={() => router.push('/(tabs)/sincronizar' as any)}
             >
-              <Ionicons name="sync" size={20} color="#F8FAFC" />
+              <Ionicons name="sync" size={20} color="#FFFFFF" />
               <Text style={styles.editButtonText}>Transmitir por P2P a Rescatistas</Text>
             </TouchableOpacity>
           )}
@@ -487,7 +539,7 @@ export default function ReportDetailScreen() {
             onPress={handleDeleteReport}
             activeOpacity={0.8}
           >
-            <Ionicons name="trash-outline" size={20} color="#EF4444" />
+            <Ionicons name="trash-outline" size={20} color={theme.danger} />
             <Text style={styles.deleteButtonText}>Eliminar Reporte</Text>
           </TouchableOpacity>
         </View>
@@ -507,7 +559,7 @@ export default function ReportDetailScreen() {
               onPress={() => setIsImageModalVisible(false)}
               hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
             >
-              <Ionicons name="close" size={26} color="#F8FAFC" />
+              <Ionicons name="close" size={26} color="#FFFFFF" />
             </TouchableOpacity>
             <Image
               source={{ uri: report.imageUri }}
@@ -521,255 +573,312 @@ export default function ReportDetailScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0F172A' },
-  scroll: { flex: 1 },
-  scrollContent: { padding: 16, paddingBottom: 40 },
-  errorContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  errorText: { fontSize: 18, color: '#EF4444', marginTop: 12 },
-  backButton: { marginTop: 16, padding: 12 },
-  backButtonText: { color: '#3B82F6', fontSize: 16 },
-  priorityHeader: {
-    borderRadius: 16,
-    padding: 20,
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  priorityLabel: { color: '#FFFFFFCC', fontSize: 13, fontWeight: '600' },
-  priorityValue: { color: '#F8FAFC', fontSize: 28, fontWeight: '900', marginTop: 4 },
-  timelineContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 20,
-    paddingHorizontal: 4,
-  },
-  timelineStep: { alignItems: 'center', flex: 1 },
-  timelineDot: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#334155',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 1,
-  },
-  timelineDotActive: { backgroundColor: '#3B82F6' },
-  timelineDotCurrent: { backgroundColor: '#22C55E' },
-  timelineLine: {
-    position: 'absolute',
-    top: 13,
-    left: '50%',
-    right: '-50%',
-    height: 2,
-    backgroundColor: '#334155',
-  },
-  timelineLineActive: { backgroundColor: '#3B82F6' },
-  timelineLabel: { fontSize: 8, color: '#64748B', marginTop: 4, textAlign: 'center' },
-  timelineLabelActive: { color: '#94A3B8' },
-  ackBannerCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#064E3B',
-    borderColor: '#059669',
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 16,
-  },
-  ackBannerTitle: {
-    color: '#ECFDF5',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  ackBannerSubtitle: {
-    color: '#A7F3D0',
-    fontSize: 11,
-    marginTop: 2,
-  },
-  card: {
-    backgroundColor: '#1E293B',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-  },
-  cardTitle: { fontSize: 15, fontWeight: '700', color: '#F8FAFC', marginBottom: 10 },
-  cardHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 10,
-  },
-  cardTitleInline: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#F8FAFC',
-  },
-  imageTouchable: {
-    borderRadius: 12,
-    overflow: 'hidden',
-    position: 'relative',
-  },
-  sceneImage: {
-    width: '100%',
-    height: 220,
-    borderRadius: 12,
-    backgroundColor: '#0F172A',
-  },
-  imageOverlayBadge: {
-    position: 'absolute',
-    bottom: 8,
-    right: 8,
-    backgroundColor: 'rgba(15, 23, 42, 0.85)',
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    borderRadius: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  imageOverlayText: {
-    color: '#F8FAFC',
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  medicalAlertBox: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
-    borderLeftWidth: 3,
-    borderLeftColor: '#EF4444',
-    padding: 10,
-    borderRadius: 6,
-    marginTop: 12,
-  },
-  medicalAlertText: {
-    color: '#FCA5A5',
-    fontSize: 12,
-    lineHeight: 18,
-    flex: 1,
-    fontWeight: '600',
-  },
-  fullscreenModalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.95)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 16,
-  },
-  closeModalButton: {
-    position: 'absolute',
-    top: 48,
-    right: 20,
-    zIndex: 10,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    borderRadius: 20,
-    padding: 6,
-  },
-  fullscreenImage: {
-    width: '100%',
-    height: '80%',
-  },
-  audioHintText: {
-    fontSize: 12,
-    color: '#94A3B8',
-    marginBottom: 12,
-    lineHeight: 18,
-  },
-  audioPlayButton: {
-    backgroundColor: '#4F46E5',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 10,
-    gap: 8,
-  },
-  audioPlayButtonActive: {
-    backgroundColor: '#3730A3',
-  },
-  audioPlayButtonText: {
-    color: '#F8FAFC',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  cardContent: { fontSize: 14, color: '#F8FAFC', lineHeight: 22 },
-  dataRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#334155',
-  },
-  dataLabel: { fontSize: 13, color: '#94A3B8', fontWeight: '600' },
-  dataValue: { fontSize: 13, color: '#F8FAFC', flex: 1, textAlign: 'right', marginLeft: 12 },
-  needsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  needChip: {
-    backgroundColor: '#334155',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-  },
-  needText: { color: '#F8FAFC', fontSize: 12, fontWeight: '600' },
-  missingItem: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 },
-  missingText: { color: '#F59E0B', fontSize: 13 },
-  auditToggle: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#1E293B',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 12,
-  },
-  auditToggleText: { color: '#94A3B8', fontSize: 14, fontWeight: '600' },
-  auditLabel: { fontSize: 12, color: '#94A3B8', fontWeight: '600', marginTop: 10, marginBottom: 4 },
-  auditContent: { fontSize: 13, color: '#F8FAFC', lineHeight: 20 },
-  auditRaw: {
-    fontSize: 11,
-    color: '#94A3B8',
-    fontFamily: 'monospace',
-    backgroundColor: '#0F172A',
-    padding: 10,
-    borderRadius: 8,
-    lineHeight: 16,
-  },
-  localBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 12,
-    padding: 10,
-    backgroundColor: '#0F172A',
-    borderRadius: 8,
-  },
-  localBadgeText: { color: '#22C55E', fontSize: 12, fontWeight: '600' },
-  actionsContainer: {
-    marginTop: 8,
-    gap: 12,
-  },
-  editButton: {
-    backgroundColor: '#3B82F6',
-    borderRadius: 12,
-    padding: 16,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 8,
-  },
-  editButtonText: { color: '#F8FAFC', fontSize: 16, fontWeight: '700' },
-  deleteButton: {
-    backgroundColor: '#1E293B',
-    borderWidth: 1,
-    borderColor: '#EF4444',
-    borderRadius: 12,
-    padding: 16,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 8,
-  },
-  deleteButtonText: { color: '#EF4444', fontSize: 16, fontWeight: '700' },
-});
+const createStyles = (theme: ThemeColors) =>
+  StyleSheet.create({
+    container: { flex: 1, backgroundColor: theme.background },
+    scroll: { flex: 1 },
+    scrollContent: { padding: 16, paddingBottom: 40 },
+    errorContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+    errorText: { fontSize: 18, color: theme.danger, marginTop: 12 },
+    backButton: { marginTop: 16, padding: 12 },
+    backButtonText: { color: theme.primary, fontSize: 16 },
+    priorityHeader: {
+      borderRadius: 16,
+      padding: 20,
+      alignItems: 'center',
+      marginBottom: 20,
+    },
+    priorityLabel: { color: '#FFFFFFCC', fontSize: 13, fontWeight: '600' },
+    priorityValue: { color: '#FFFFFF', fontSize: 28, fontWeight: '900', marginTop: 4 },
+    timelineContainer: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'flex-start',
+      marginBottom: 20,
+      paddingHorizontal: 4,
+    },
+    timelineStep: { alignItems: 'center', flex: 1 },
+    timelineDot: {
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      backgroundColor: theme.isDark ? '#334155' : '#E2E8F0',
+      justifyContent: 'center',
+      alignItems: 'center',
+      zIndex: 1,
+    },
+    timelineDotActive: { backgroundColor: theme.primary },
+    timelineDotCurrent: { backgroundColor: theme.success },
+    timelineLine: {
+      position: 'absolute',
+      top: 13,
+      left: '50%',
+      right: '-50%',
+      height: 2,
+      backgroundColor: theme.border,
+    },
+    timelineLineActive: { backgroundColor: theme.primary },
+    timelineLabel: { fontSize: 8, color: theme.textMuted, marginTop: 4, textAlign: 'center' },
+    timelineLabelActive: { color: theme.textSecondary },
+    ackBannerCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: theme.isDark ? '#064E3B' : '#DCFCE7',
+      borderColor: theme.isDark ? '#059669' : '#22C55E',
+      borderWidth: 1,
+      borderRadius: 12,
+      padding: 12,
+      marginBottom: 16,
+    },
+    ackBannerTitle: {
+      color: theme.isDark ? '#ECFDF5' : '#166534',
+      fontSize: 13,
+      fontWeight: '700',
+    },
+    ackBannerSubtitle: {
+      color: theme.isDark ? '#A7F3D0' : '#15803D',
+      fontSize: 11,
+      marginTop: 2,
+    },
+    card: {
+      backgroundColor: theme.card,
+      borderRadius: 12,
+      padding: 16,
+      marginBottom: 12,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    cardTitle: { fontSize: 15, fontWeight: '700', color: theme.text, marginBottom: 10 },
+    cardHeaderRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      marginBottom: 10,
+    },
+    cardTitleInline: {
+      fontSize: 15,
+      fontWeight: '700',
+      color: theme.text,
+    },
+    imageTouchable: {
+      borderRadius: 12,
+      overflow: 'hidden',
+      position: 'relative',
+    },
+    sceneImage: {
+      width: '100%',
+      height: 220,
+      borderRadius: 12,
+      backgroundColor: theme.cardInner,
+    },
+    imageOverlayBadge: {
+      position: 'absolute',
+      bottom: 8,
+      right: 8,
+      backgroundColor: 'rgba(15, 23, 42, 0.85)',
+      paddingVertical: 5,
+      paddingHorizontal: 10,
+      borderRadius: 8,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    imageOverlayText: {
+      color: '#F8FAFC',
+      fontSize: 11,
+      fontWeight: '600',
+    },
+    medicalAlertBox: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 8,
+      backgroundColor: theme.isDark ? 'rgba(239, 68, 68, 0.15)' : '#FEE2E2',
+      borderLeftWidth: 3,
+      borderLeftColor: theme.danger,
+      padding: 10,
+      borderRadius: 6,
+      marginTop: 12,
+    },
+    medicalAlertText: {
+      color: theme.isDark ? '#FCA5A5' : '#991B1B',
+      fontSize: 12,
+      lineHeight: 18,
+      flex: 1,
+      fontWeight: '600',
+    },
+    fullscreenModalBackdrop: {
+      flex: 1,
+      backgroundColor: theme.modalOverlay,
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: 16,
+    },
+    closeModalButton: {
+      position: 'absolute',
+      top: 48,
+      right: 20,
+      zIndex: 10,
+      backgroundColor: 'rgba(255, 255, 255, 0.2)',
+      borderRadius: 20,
+      padding: 6,
+    },
+    fullscreenImage: {
+      width: '100%',
+      height: '80%',
+    },
+    audioHintText: {
+      fontSize: 12,
+      color: theme.textMuted,
+      marginBottom: 12,
+      lineHeight: 18,
+    },
+    audioPlayButton: {
+      backgroundColor: theme.primary,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+      borderRadius: 10,
+      gap: 8,
+    },
+    audioPlayButtonActive: {
+      backgroundColor: theme.isDark ? '#1D4ED8' : '#2563EB',
+    },
+    audioPlayButtonText: {
+      color: '#FFFFFF',
+      fontSize: 14,
+      fontWeight: '700',
+    },
+    executiveSummaryCard: {
+      borderColor: theme.primary,
+      borderWidth: 1.5,
+      backgroundColor: theme.card,
+    },
+    aiBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      backgroundColor: theme.primary,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: 6,
+      marginRight: 8,
+    },
+    aiBadgeText: {
+      color: '#FFFFFF',
+      fontSize: 11,
+      fontWeight: '700',
+      letterSpacing: 0.3,
+    },
+    executiveSummaryText: {
+      color: theme.text,
+      fontSize: 14,
+      lineHeight: 22,
+      marginTop: 10,
+      marginBottom: 12,
+      fontWeight: '500',
+    },
+    aiDisclaimerBox: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 8,
+      backgroundColor: theme.cardInner,
+      padding: 10,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    aiDisclaimerText: {
+      flex: 1,
+      color: theme.textMuted,
+      fontSize: 12,
+      lineHeight: 16,
+      fontStyle: 'italic',
+    },
+    cardContent: { fontSize: 14, color: theme.text, lineHeight: 22 },
+    dataRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      paddingVertical: 8,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.border,
+    },
+    dataLabel: { fontSize: 13, color: theme.textMuted, fontWeight: '600' },
+    dataValue: { fontSize: 13, color: theme.text, flex: 1, textAlign: 'right', marginLeft: 12 },
+    needsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+    needChip: {
+      backgroundColor: theme.cardInner,
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    needText: { color: theme.text, fontSize: 12, fontWeight: '600' },
+    missingItem: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 },
+    missingText: { color: theme.warning, fontSize: 13 },
+    auditToggle: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      backgroundColor: theme.card,
+      borderRadius: 12,
+      padding: 14,
+      marginBottom: 12,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    auditToggleText: { color: theme.textMuted, fontSize: 14, fontWeight: '600' },
+    auditLabel: { fontSize: 12, color: theme.textMuted, fontWeight: '600', marginTop: 10, marginBottom: 4 },
+    auditContent: { fontSize: 13, color: theme.text, lineHeight: 20 },
+    auditRaw: {
+      fontSize: 11,
+      color: theme.textSecondary,
+      fontFamily: 'monospace',
+      backgroundColor: theme.cardInner,
+      padding: 10,
+      borderRadius: 8,
+      lineHeight: 16,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    localBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      marginTop: 12,
+      padding: 10,
+      backgroundColor: theme.cardInner,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    localBadgeText: { color: theme.success, fontSize: 12, fontWeight: '600' },
+    actionsContainer: {
+      marginTop: 8,
+      gap: 12,
+    },
+    editButton: {
+      backgroundColor: theme.primary,
+      borderRadius: 12,
+      padding: 16,
+      flexDirection: 'row',
+      justifyContent: 'center',
+      alignItems: 'center',
+      gap: 8,
+    },
+    editButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
+    deleteButton: {
+      backgroundColor: theme.card,
+      borderWidth: 1,
+      borderColor: theme.danger,
+      borderRadius: 12,
+      padding: 16,
+      flexDirection: 'row',
+      justifyContent: 'center',
+      alignItems: 'center',
+      gap: 8,
+    },
+    deleteButtonText: { color: theme.danger, fontSize: 16, fontWeight: '700' },
+  });

@@ -40,6 +40,8 @@ export interface TriageResult {
   audioUri?: string;
   /** Ruta local o remota a la imagen tomada */
   imageUri?: string;
+  /** Relato de texto original ingresado por el ciudadano u operador */
+  textRelato?: string;
   /** Transcripción local generada por WHISPER_TINY_Q8_0 */
   transcript?: string;
   /** Análisis de severidad visual generado por VISIONPSY_NANO_460M_MULTIMODAL_Q8_0 */
@@ -50,6 +52,8 @@ export interface TriageResult {
   injuriesAndSymptoms?: string;
   /** Resumen conciso de la emergencia generado por LLAMA_3_2_1B_INST_Q4_0 */
   extractedSummary: string;
+  /** Resumen ejecutivo integral para rescatistas generado por IA (visión + audio + texto) */
+  executiveSummary?: string;
   /** Prioridad START (Enum forzado: ROJO, AMARILLO, VERDE, NEGRO) */
   triagePriority: StartPriority;
   /** Categorías de necesidad identificadas (Estándar Esfera + Perseus) */
@@ -134,11 +138,13 @@ export interface ReportRecord {
   imageUri?: string;
 
   // Datos de TriageResult y Clínicos
+  textRelato?: string;
   transcript?: string;
   visionSeverity?: string;
   visualTriageAnalysis?: string;
   injuriesAndSymptoms?: string;
   extractedSummary: string;
+  executiveSummary?: string;
   triagePriority: StartPriority;
   needs: DisasterNeedCategory[];
   reportedPeopleCount?: number;

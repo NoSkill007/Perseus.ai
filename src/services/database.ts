@@ -68,7 +68,9 @@ export async function initializeDatabase(db: SQLite.SQLiteDatabase): Promise<voi
       vision_severity TEXT,
       visual_triage_analysis TEXT,
       injuries_and_symptoms TEXT,
+      text_relato TEXT,
       extracted_summary TEXT NOT NULL,
+      executive_summary TEXT,
       triage_priority TEXT NOT NULL,
       needs TEXT,
       reported_people_count INTEGER,
@@ -108,6 +110,16 @@ export async function initializeDatabase(db: SQLite.SQLiteDatabase): Promise<voi
   try {
     await db.execAsync(`
       ALTER TABLE reports ADD COLUMN injuries_and_symptoms TEXT;
+    `);
+  } catch {}
+  try {
+    await db.execAsync(`
+      ALTER TABLE reports ADD COLUMN text_relato TEXT;
+    `);
+  } catch {}
+  try {
+    await db.execAsync(`
+      ALTER TABLE reports ADD COLUMN executive_summary TEXT;
     `);
   } catch {}
 
@@ -165,5 +177,43 @@ export async function initializeDatabase(db: SQLite.SQLiteDatabase): Promise<voi
     );
   `);
 
+  // 7. Configuración de la aplicación (preferencias de usuario, tema, etc.)
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+  `);
+
   console.log('[Database] Tablas P2P y Triaje inicializadas correctamente.');
+}
+
+/**
+ * Obtiene el valor de una configuración de la aplicación
+ */
+export function getAppSetting(db: SQLite.SQLiteDatabase, key: string): string | null {
+  try {
+    const row = db.getFirstSync<{ value: string }>(
+      'SELECT value FROM app_settings WHERE key = ?',
+      [key]
+    );
+    return row?.value ?? null;
+  } catch (err) {
+    console.warn(`[Database] Error al leer configuración '${key}':`, err);
+    return null;
+  }
+}
+
+/**
+ * Guarda o actualiza una configuración de la aplicación
+ */
+export function setAppSetting(db: SQLite.SQLiteDatabase, key: string, value: string): void {
+  try {
+    db.runSync(
+      'INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+      [key, value]
+    );
+  } catch (err) {
+    console.warn(`[Database] Error al guardar configuración '${key}':`, err);
+  }
 }
