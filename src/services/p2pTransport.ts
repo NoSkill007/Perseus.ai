@@ -9,6 +9,7 @@ import type {
   P2PTransportType,
   RescueNode,
 } from '../types/triageTypes';
+import { isBluetoothNativeSupported, sendBluetoothPacket } from './bluetoothNative';
 
 export const DEFAULT_P2P_PORT = 7890;
 export const DEFAULT_TIMEOUT_MS = 6000;
@@ -194,8 +195,51 @@ export async function sendPacketViaBluetooth(
 ): Promise<{ success: boolean; response?: any; error?: string; bytes: number }> {
   const { raw, byteLength, chunksCount } = formatBluetoothPayload(packet);
 
+  // 1. Si el módulo nativo Android de Bluetooth RFCOMM está presente, transmitir por radio física
+  if (isBluetoothNativeSupported()) {
+    try {
+      console.log(`[Bluetooth RFCOMM Nativo] Conectando por radio a: ${targetDeviceId}...`);
+      if (onProgress) onProgress(0.4);
+
+      const nativeRes = await sendBluetoothPacket(targetDeviceId, raw);
+
+      if (nativeRes.success) {
+        if (onProgress) onProgress(1.0);
+        let parsedAck: any = null;
+        try {
+          if (nativeRes.responseJson) parsedAck = JSON.parse(nativeRes.responseJson);
+        } catch {}
+
+        return {
+          success: true,
+          response: {
+            ackPacketId: packet.packetId,
+            receivedAt: Date.now(),
+            status: 'received_via_bluetooth',
+            nodeId: nativeRes.peerName || targetDeviceId,
+            peerAddress: nativeRes.peerAddress,
+            rawAck: parsedAck,
+          },
+          bytes: nativeRes.bytes || byteLength,
+        };
+      }
+
+      return {
+        success: false,
+        error: nativeRes.error || `Sin respuesta de rescatista Bluetooth en ${targetDeviceId}.`,
+        bytes: byteLength,
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        error: err.message || 'Error en canal Bluetooth nativo',
+        bytes: byteLength,
+      };
+    }
+  }
+
+  // 2. Modo emulado/fallback para tests unitarios y entornos sin hardware nativo
   try {
-    // Simular emisión de ráfaga de chunks BLE por el canal de radio
     for (let i = 1; i <= chunksCount; i++) {
       await new Promise((resolve) => setTimeout(resolve, 60));
       if (onProgress) {
@@ -203,7 +247,6 @@ export async function sendPacketViaBluetooth(
       }
     }
 
-    // Comprobar si se detectó un rescatista o se confirmó un ACK
     if (mockReceiverAckRequested) {
       mockReceiverAckRequested = false;
       return {
@@ -218,7 +261,6 @@ export async function sendPacketViaBluetooth(
       };
     }
 
-    // Sin rescatista conectado en este instante: la ráfaga no recibe acuse
     return {
       success: false,
       error: `Sin acuse de recibo (ACK) de rescatista Bluetooth en ${targetDeviceId || 'el canal BLE'}.`,

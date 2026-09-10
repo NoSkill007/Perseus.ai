@@ -28,6 +28,14 @@ import { syncReportsToPeer, syncReportsBeaconLoop, processIncomingPacket } from 
 import { getRecentSyncLogs, getSyncStats } from '../../src/services/syncLogService';
 import { getRescueNodes, upsertRescueNode } from '../../src/services/nodeService';
 import { createPacket, triggerMockReceiverAck } from '../../src/services/p2pTransport';
+import {
+  isBluetoothNativeSupported,
+  getPairedBluetoothDevices,
+  startBluetoothServer,
+  stopBluetoothServer,
+  subscribeToIncomingBluetoothPackets,
+  PairedDevice,
+} from '../../src/services/bluetoothNative';
 import type {
   ReportRecord,
   UserProfile,
@@ -66,6 +74,8 @@ export default function SincronizarScreen() {
   const [syncLogs, setSyncLogs] = useState<SyncLogRecord[]>([]);
   const [stats, setStats] = useState({ totalSent: 0, totalReceived: 0, totalDuplicates: 0 });
   const [nodes, setNodes] = useState<RescueNode[]>([]);
+  const [pairedDevices, setPairedDevices] = useState<PairedDevice[]>([]);
+  const btSubscriptionRef = useRef<{ remove: () => void } | null>(null);
 
   const loadData = useCallback(() => {
     try {
@@ -86,16 +96,35 @@ export default function SincronizarScreen() {
       setSyncLogs(getRecentSyncLogs(db, 20));
       setStats(getSyncStats(db));
       setNodes(getRescueNodes(db));
+
+      // Cargar dispositivos emparejados si Bluetooth nativo está disponible
+      if (isBluetoothNativeSupported()) {
+        getPairedBluetoothDevices().then((devs) => {
+          setPairedDevices(devs);
+          if (devs.length > 0 && transport === 'bluetooth' && (!peerAddress || peerAddress === '192.168.43.1' || peerAddress === 'BRIGADA-BT-01')) {
+            setPeerAddress(devs[0].name || devs[0].address);
+          }
+        }).catch(() => {});
+      }
     } catch (err) {
       console.error('[Sincronizar] Error al cargar datos:', err);
     }
-  }, [db]);
+  }, [db, transport, peerAddress]);
 
   useFocusEffect(
     useCallback(() => {
       loadData();
     }, [loadData])
   );
+
+  useEffect(() => {
+    return () => {
+      btSubscriptionRef.current?.remove();
+      if (isBluetoothNativeSupported()) {
+        stopBluetoothServer().catch(() => {});
+      }
+    };
+  }, []);
 
   const isRescatista = profile?.role === 'rescatista';
 
@@ -286,8 +315,46 @@ export default function SincronizarScreen() {
     }
   };
 
-  const toggleListening = () => {
-    setIsListening((prev) => !prev);
+  const toggleListening = async () => {
+    const nextState = !isListening;
+    setIsListening(nextState);
+
+    if (nextState) {
+      if (transport === 'bluetooth' && isBluetoothNativeSupported()) {
+        try {
+          await startBluetoothServer('PerseusRescue');
+          console.log('[Sincronizar] Servidor Bluetooth RFCOMM activo y escuchando...');
+
+          btSubscriptionRef.current?.remove();
+          btSubscriptionRef.current = subscribeToIncomingBluetoothPackets((event) => {
+            console.log('[Sincronizar] ¡Paquete Bluetooth RFCOMM recibido de:', event.senderName);
+            try {
+              const packet = JSON.parse(event.packetJson);
+              const res = processIncomingPacket(db, packet, 'bluetooth');
+              if (res.success) {
+                Alert.alert(
+                  '📥 Reporte Recibido por Bluetooth',
+                  `¡Paquete físico recibido de ${event.senderName}! ${res.processedCount} reporte(s) integrado(s) en la base de datos de la brigada.`
+                );
+                loadData();
+              }
+            } catch (parseErr) {
+              console.error('[Sincronizar] Error al parsear paquete BT:', parseErr);
+            }
+          });
+        } catch (err: any) {
+          Alert.alert('Error Bluetooth', err.message || 'No se pudo iniciar el servidor Bluetooth');
+          setIsListening(false);
+        }
+      }
+    } else {
+      if (transport === 'bluetooth' && isBluetoothNativeSupported()) {
+        await stopBluetoothServer().catch(() => {});
+        btSubscriptionRef.current?.remove();
+        btSubscriptionRef.current = null;
+        console.log('[Sincronizar] Servidor Bluetooth RFCOMM detenido');
+      }
+    }
   };
 
   return (
@@ -374,21 +441,68 @@ export default function SincronizarScreen() {
         {/* Configuración de Destino */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>
-            {transport === 'wifi_lan' ? '🌐 Dirección IP del Hotspot' : '🔷 Identificador Bluetooth'}
+            {transport === 'wifi_lan' ? '🌐 Dirección IP del Hotspot' : '🔷 Dispositivo Bluetooth Receptor'}
           </Text>
           <Text style={styles.cardDesc}>
             {transport === 'wifi_lan'
               ? 'Conéctate al punto de acceso (Hotspot) del rescatista e introduce su IP.'
-              : 'Enlaza con el dispositivo Bluetooth de la brigada más cercana.'}
+              : 'Selecciona o introduce el nombre o dirección MAC del teléfono del rescatista emparejado.'}
           </Text>
           <TextInput
             style={styles.input}
             value={peerAddress}
             onChangeText={setPeerAddress}
-            placeholder={transport === 'wifi_lan' ? '192.168.43.1' : 'BRIGADA-BT-01'}
+            placeholder={transport === 'wifi_lan' ? '192.168.43.1' : 'Nombre o MAC (ej. Galaxy S21 o 00:11:22...)'}
             placeholderTextColor="#64748B"
             autoCapitalize="none"
           />
+
+          {/* Chips de dispositivos emparejados detectados */}
+          {transport === 'bluetooth' && pairedDevices.length > 0 && (
+            <View style={{ marginTop: 10 }}>
+              <Text style={{ fontSize: 12, color: '#94A3B8', marginBottom: 6 }}>
+                Dispositivos Bluetooth emparejados (toca para seleccionar):
+              </Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                {pairedDevices.map((dev, idx) => {
+                  const isSelected = peerAddress === dev.name || peerAddress === dev.address;
+                  return (
+                    <TouchableOpacity
+                      key={idx}
+                      style={{
+                        backgroundColor: isSelected ? '#2563EB' : '#0F172A',
+                        borderColor: isSelected ? '#60A5FA' : '#334155',
+                        borderWidth: 1,
+                        paddingVertical: 6,
+                        paddingHorizontal: 10,
+                        borderRadius: 8,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 6,
+                      }}
+                      onPress={() => setPeerAddress(dev.name || dev.address)}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons
+                        name="bluetooth"
+                        size={14}
+                        color={isSelected ? '#F8FAFC' : '#3B82F6'}
+                      />
+                      <Text
+                        style={{
+                          color: isSelected ? '#F8FAFC' : '#CBD5E1',
+                          fontSize: 12,
+                          fontWeight: isSelected ? '700' : '500',
+                        }}
+                      >
+                        {dev.name || dev.address}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          )}
         </View>
 
         {/* ==================== VISTA RESCATISTA ==================== */}
