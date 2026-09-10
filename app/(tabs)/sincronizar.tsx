@@ -27,7 +27,7 @@ import {
 import { syncReportsToPeer, syncReportsBeaconLoop, processIncomingPacket } from '../../src/services/syncEngine';
 import { getRecentSyncLogs, getSyncStats } from '../../src/services/syncLogService';
 import { getRescueNodes, upsertRescueNode } from '../../src/services/nodeService';
-import { createPacket } from '../../src/services/p2pTransport';
+import { createPacket, triggerMockReceiverAck } from '../../src/services/p2pTransport';
 import type {
   ReportRecord,
   UserProfile,
@@ -533,6 +533,20 @@ export default function SincronizarScreen() {
                           Cancelar Búsqueda / Detener Baliza
                         </Text>
                       </TouchableOpacity>
+
+                      {/* Botón para Simular Llegada de Rescatista (Demo Jurado) */}
+                      <TouchableOpacity
+                        style={styles.simulateAckButton}
+                        onPress={() => {
+                          triggerMockReceiverAck();
+                        }}
+                        activeOpacity={0.8}
+                      >
+                        <Ionicons name="checkmark-done-circle" size={18} color="#34D399" />
+                        <Text style={styles.simulateAckButtonText}>
+                          🎯 Simular Llegada de Rescatista (Confirmar ACK)
+                        </Text>
+                      </TouchableOpacity>
                     </View>
                   ) : (
                     /* Botones cuando no está activa la baliza */
@@ -787,6 +801,24 @@ const styles = StyleSheet.create({
   stopBeaconButtonText: {
     color: '#F8FAFC',
     fontSize: 14,
+    fontWeight: '700',
+  },
+  simulateAckButton: {
+    backgroundColor: '#064E3B',
+    borderColor: '#059669',
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 10,
+  },
+  simulateAckButtonText: {
+    color: '#34D399',
+    fontSize: 13,
     fontWeight: '700',
   },
   mainButtonDanger: { backgroundColor: '#EF4444' },

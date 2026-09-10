@@ -165,8 +165,27 @@ export async function sendPacketViaWifi(
   }
 }
 
+// Estado para simulación de recepción de ACK durante demos y pruebas
+let mockReceiverAckRequested = false;
+
 /**
- * Simula el canal de transporte Bluetooth offline (Store-and-Forward / RFCOMM)
+ * Activa manualmente el acuse de recibo (ACK) de rescatista para demostraciones del jurado
+ */
+export function triggerMockReceiverAck(): void {
+  mockReceiverAckRequested = true;
+}
+
+/**
+ * Reinicia el estado de simulación de ACK
+ */
+export function resetMockReceiverAck(): void {
+  mockReceiverAckRequested = false;
+}
+
+/**
+ * Emite paquetes a través del canal Bluetooth offline (Store-and-Forward / RFCOMM)
+ * En modo búsqueda/baliza, emite los chunks por radio y espera respuesta ACK.
+ * Si no hay un nodo receptor escuchando, reporta sin respuesta para permitir reintentos.
  */
 export async function sendPacketViaBluetooth(
   targetDeviceId: string,
@@ -176,21 +195,33 @@ export async function sendPacketViaBluetooth(
   const { raw, byteLength, chunksCount } = formatBluetoothPayload(packet);
 
   try {
-    // Simular el handshake y transmisión de chunks BLE
+    // Simular emisión de ráfaga de chunks BLE por el canal de radio
     for (let i = 1; i <= chunksCount; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 80));
+      await new Promise((resolve) => setTimeout(resolve, 60));
       if (onProgress) {
         onProgress(i / chunksCount);
       }
     }
 
+    // Comprobar si se detectó un rescatista o se confirmó un ACK
+    if (mockReceiverAckRequested) {
+      mockReceiverAckRequested = false;
+      return {
+        success: true,
+        response: {
+          ackPacketId: packet.packetId,
+          receivedAt: Date.now(),
+          status: 'received_via_bluetooth',
+          nodeId: targetDeviceId || 'BRIGADA-BT-01',
+        },
+        bytes: byteLength,
+      };
+    }
+
+    // Sin rescatista conectado en este instante: la ráfaga no recibe acuse
     return {
-      success: true,
-      response: {
-        ackPacketId: packet.packetId,
-        receivedAt: Date.now(),
-        status: 'received_via_bluetooth',
-      },
+      success: false,
+      error: `Sin acuse de recibo (ACK) de rescatista Bluetooth en ${targetDeviceId || 'el canal BLE'}.`,
       bytes: byteLength,
     };
   } catch (err: any) {
@@ -250,11 +281,17 @@ export async function sendPacketContinuousBeacon(
     totalBytesTransferred += result.bytes || 0;
 
     // 2. Si hubo éxito o acuse ACK recibido, terminar con éxito inmediatamente
-    if (result.success) {
+    if (result.success || mockReceiverAckRequested) {
+      mockReceiverAckRequested = false;
       console.log(`[P2P Beacon] ¡Éxito en baliza #${attempt}! ACK confirmado por el receptor.`);
       return {
         success: true,
-        response: result.response,
+        response: result.response || {
+          ackPacketId: packet.packetId,
+          receivedAt: Date.now(),
+          status: `received_via_${options.transport}`,
+          nodeId: options.targetAddress,
+        },
         bytes: totalBytesTransferred,
         totalAttempts: attempt,
       };
@@ -262,6 +299,7 @@ export async function sendPacketContinuousBeacon(
 
     // 3. Verificar si el usuario canceló durante el intento
     if (options.abortSignal?.aborted) {
+      resetMockReceiverAck();
       break;
     }
 
