@@ -17,39 +17,53 @@ export async function transcribeAudioLocally(
     throw new Error('[AudioTranscriber] Se requiere audioUri válido.');
   }
 
-  console.log(`[AudioTranscriber] Iniciando transcripción local para: ${audioUri}`);
+  console.log(`[AudioTranscriber] Iniciando transcripción local con Whisper ASR para: ${audioUri}`);
 
   // 1. Cargar modelo Whisper en RAM
   const loaded = await qvacManager.loadModel('ASR_WHISPER');
-  if (!loaded) {
-    console.warn('[AudioTranscriber] No se pudo cargar el modelo Whisper. Retornando texto de fallback.');
-    return '[Transcripción de audio no disponible offline en este dispositivo]';
-  }
 
   try {
-    if (qvacManager.isNativeModelLoaded('ASR_WHISPER')) {
-      const qvacSdk = qvacManager.getSdk();
-      if (qvacSdk && typeof qvacSdk.transcribe === 'function') {
-        try {
-          const result = await qvacSdk.transcribe({
-            audioPath: audioUri,
-            language: language,
-          });
+    const qvacSdk = qvacManager.getSdk();
+    const cleanAudioPath = audioUri.startsWith('file://') ? audioUri.replace('file://', '') : audioUri;
+    const targetModelId = qvacManager.getNativeModelId('ASR_WHISPER') || 'ASR_WHISPER';
 
-          if (result?.text?.trim()) {
-            return result.text.trim();
-          }
-        } catch (e) {
-          console.warn('[AudioTranscriber] Inferencia Whisper falló o archivo de audio no procesable:', e);
-        }
-      }
+    console.log(`[AudioTranscriber] Ejecutando transcribe() en QVAC SDK con targetModelId="${targetModelId}", path="${cleanAudioPath}"...`);
+
+    if (!qvacSdk || typeof qvacSdk.transcribe !== 'function') {
+      const err = new Error('[AudioTranscriber] qvacSdk.transcribe no es una función disponible en el SDK.');
+      console.error(err);
+      throw err;
     }
 
-    // Fallback simulado para desarrollo
-    console.log('[AudioTranscriber] Inferencia Whisper ejecutada (Modo desarrollo QVAC).');
-    return 'Reporte de voz de auxilio procesado por Whisper ASR.';
-  } catch (error) {
-    console.error('[AudioTranscriber] Error durante transcripción ASR:', error);
+    const result = await qvacSdk.transcribe({
+      modelId: targetModelId,
+      audioChunk: cleanAudioPath,
+      prompt: 'Emergencia, rescate, personas atrapadas, heridos, auxilio, ubicación en Panamá',
+    });
+
+    console.log('[AudioTranscriber] Inferencia Whisper retornó:', JSON.stringify(result));
+
+    const text = typeof result === 'string'
+      ? result
+      : (result as any)?.text || (result as any)?.transcript || (Array.isArray(result) ? result.map((s: any) => s?.text).join(' ') : '');
+
+    if (text && text.trim().length > 0) {
+      console.log(`[AudioTranscriber] Whisper transcribió exitosamente: "${text.trim()}"`);
+      return text.trim();
+    }
+
+    console.warn('[AudioTranscriber] Whisper no generó texto para este audio.');
+    return '';
+  } catch (error: any) {
+    console.error('[AudioTranscriber] ❌ ERROR COMPLETO EN TRANSCRIPCIÓN WHISPER:', {
+      name: error?.name,
+      message: error?.message,
+      stack: error?.stack,
+      code: error?.code,
+      cause: error?.cause,
+      raw: error,
+    });
+    // Lanzar el error sin cadenas genéricas para que la consola muestre exactamente el fallo
     throw error;
   } finally {
     // Liberar el modelo inmediatamente después de usarlo

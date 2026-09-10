@@ -157,3 +157,71 @@ export interface SyncEvent {
   timestamp: number;
   ackReceived: boolean;
 }
+
+// ==========================================
+// PERSONA C: Tipos Oficiales P2P y Mesh
+// ==========================================
+
+export type P2PTransportType = 'wifi_lan' | 'bluetooth' | 'manual';
+
+export interface RescueNode {
+  id: string; // UUID v4
+  deviceId: string;
+  callsign: string;
+  role: AppRole;
+  lastLat?: number;
+  lastLon?: number;
+  lastSeen: number;
+}
+
+export type AssignmentStatus = 'propuesta' | 'en_camino' | 'en_sitio' | 'atendido' | 'conflicto' | 'cancelado';
+
+export interface AssignmentRecord {
+  id: string; // UUID v4
+  reportId: string;
+  nodeId: string;
+  assignedAt: number;
+  status: AssignmentStatus;
+  notes?: string;
+}
+
+export interface SyncLogRecord {
+  id: string; // UUID v4
+  reportId: string;
+  nodeId?: string;
+  syncedAt: number;
+  direction: 'sent' | 'received';
+  transport: P2PTransportType;
+  bytesTransferred?: number;
+  status: 'exitoso' | 'fallido' | 'duplicado';
+}
+
+export type P2PMessageType =
+  | 'SYNC_HELLO'
+  | 'HELLO_ACK'
+  | 'REPORT_BUNDLE'
+  | 'REPORT_ACK'
+  | 'ASSIGN_CLAIM'
+  | 'ASSIGN_CONFLICT'
+  | 'HANDSHAKE'
+  | 'ASSIGNMENT_CLAIM'
+  | 'ASSIGNMENT_CONFLICT'
+  | 'ACK'
+  | 'PING';
+
+export interface P2PPacket<T = any> {
+  packetId: string;
+  type: P2PMessageType;
+  version: number;
+  senderNode: RescueNode;
+  senderNodeId?: string;
+  senderCallsign?: string;
+  targetNodeId?: string;
+  timestamp: number;
+  payload?: T;
+  reports?: ReportRecord[];
+  reportIds?: string[];
+  assignment?: AssignmentRecord;
+  competingAssignments?: AssignmentRecord[];
+}
+

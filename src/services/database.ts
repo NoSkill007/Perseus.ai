@@ -1,6 +1,13 @@
 /**
  * Inicialización y gestión de base de datos SQLite local para Perseus.ai
  * Usa expo-sqlite (SDK 54) con SQLiteProvider + useSQLiteContext
+ * 
+ * Contiene el esquema completo de 4 tablas oficiales para la Hackathon:
+ * 1. user_profile
+ * 2. reports (triage_reports)
+ * 3. rescue_nodes (nodos y brigadistas descubiertos)
+ * 4. assignments (toma de casos y resolución de conflictos)
+ * 5. sync_log (evidencia auditable de transferencias P2P y relays)
  */
 
 import * as SQLite from 'expo-sqlite';
@@ -26,6 +33,7 @@ export const DATABASE_NAME = DB_NAME;
 export async function initializeDatabase(db: SQLite.SQLiteDatabase): Promise<void> {
   console.log('[Database] Inicializando tablas de Perseus.ai...');
 
+  // 1. Perfil de Usuario Local
   await db.execAsync(`
     CREATE TABLE IF NOT EXISTS user_profile (
       id INTEGER PRIMARY KEY DEFAULT 1,
@@ -47,6 +55,7 @@ export async function initializeDatabase(db: SQLite.SQLiteDatabase): Promise<voi
     );
   `);
 
+  // 2. Reportes de Triaje (triage_reports)
   await db.execAsync(`
     CREATE TABLE IF NOT EXISTS reports (
       report_id TEXT PRIMARY KEY,
@@ -76,6 +85,48 @@ export async function initializeDatabase(db: SQLite.SQLiteDatabase): Promise<voi
     );
   `);
 
+  // 3. Nodos Rescatistas (rescue_nodes)
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS rescue_nodes (
+      id TEXT PRIMARY KEY,
+      device_id TEXT NOT NULL,
+      callsign TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'rescatista',
+      last_lat REAL,
+      last_lon REAL,
+      last_seen INTEGER NOT NULL
+    );
+  `);
+
+  // 4. Asignaciones de Casos (assignments)
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS assignments (
+      id TEXT PRIMARY KEY,
+      report_id TEXT NOT NULL,
+      node_id TEXT NOT NULL,
+      assigned_at INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'propuesta',
+      notes TEXT,
+      FOREIGN KEY (report_id) REFERENCES reports(report_id)
+    );
+  `);
+
+  // 5. Bitácora de Sincronización P2P (sync_log - Evidencia para jurado)
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS sync_log (
+      id TEXT PRIMARY KEY,
+      report_id TEXT NOT NULL,
+      node_id TEXT,
+      synced_at INTEGER NOT NULL,
+      direction TEXT NOT NULL DEFAULT 'sent',
+      transport TEXT NOT NULL DEFAULT 'wifi_lan',
+      bytes_transferred INTEGER DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'exitoso',
+      FOREIGN KEY (report_id) REFERENCES reports(report_id)
+    );
+  `);
+
+  // 6. Registro de eventos de sincronización (retrocompatibilidad)
   await db.execAsync(`
     CREATE TABLE IF NOT EXISTS sync_events (
       event_id TEXT PRIMARY KEY,
@@ -88,5 +139,5 @@ export async function initializeDatabase(db: SQLite.SQLiteDatabase): Promise<voi
     );
   `);
 
-  console.log('[Database] Tablas inicializadas correctamente.');
+  console.log('[Database] Tablas P2P y Triaje inicializadas correctamente.');
 }

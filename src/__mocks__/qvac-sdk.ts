@@ -17,6 +17,10 @@ export function completion(params: {
 
   const isCritical =
     lower.includes('atrapad') ||
+    lower.includes('debajo') ||
+    lower.includes('bajo la casa') ||
+    lower.includes('no nos podemos mover') ||
+    lower.includes('herid') ||
     lower.includes('terremoto') ||
     lower.includes('sismo') ||
     lower.includes('techo') ||
@@ -26,7 +30,13 @@ export function completion(params: {
   const priority = isCritical ? 'ROJO' : 'AMARILLO';
 
   const needs: string[] = [];
-  if (lower.includes('terremoto') || lower.includes('atrapad')) {
+  if (
+    lower.includes('terremoto') ||
+    lower.includes('atrapad') ||
+    lower.includes('debajo') ||
+    lower.includes('no nos podemos mover') ||
+    lower.includes('herid')
+  ) {
     needs.push('ACCESO_RESCATE', 'SALUD', 'PROTECCION', 'ALBERGUE');
   } else if (lower.includes('inund')) {
     needs.push('AGUA_SANEAMIENTO', 'ALIMENTACION', 'ALBERGUE', 'ACCESO_RESCATE');
@@ -60,8 +70,8 @@ export function completion(params: {
   };
 }
 
-export async function transcribe(options: { audioPath: string; language?: string }) {
-  return { text: 'Reporte de voz de auxilio procesado por Whisper ASR.' };
+export async function transcribe(params: { modelId: string; audioChunk: string; prompt?: string }) {
+  return 'Hay 5 personas atrapadas debajo de la casa, estamos heridos y no nos podemos mover.';
 }
 
 export default {

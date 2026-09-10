@@ -20,6 +20,7 @@ import { Audio } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
 import { runTriagePipeline } from '../../src/services/ai/triagePipeline';
 import { saveReport, triageResultToReport } from '../../src/services/reportService';
+import { getProfile } from '../../src/services/profileService';
 import {
   startAudioRecording,
   stopAudioRecording,
@@ -72,6 +73,7 @@ export default function ReportarScreen() {
   const [district, setDistrict] = useState('');
   const [corregimiento, setCorregimiento] = useState('');
   const [personasAfectadas, setPersonasAfectadas] = useState(1);
+  const [useSavedAddress, setUseSavedAddress] = useState(false);
 
   // Estados multimedia
   const [audioUri, setAudioUri] = useState('');
@@ -93,6 +95,8 @@ export default function ReportarScreen() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingStage, setProcessingStage] = useState<ProcessingStage>('audio');
 
+  const recordingRef = useRef<Audio.Recording | null>(null);
+
   // Limpieza de recursos al desmontar pantalla
   useEffect(() => {
     return () => {
@@ -102,13 +106,15 @@ export default function ReportarScreen() {
       if (stageTimerRef.current) {
         clearTimeout(stageTimerRef.current);
       }
-      if (recordingObj) {
-        recordingObj.stopAndUnloadAsync().catch((err) => {
-          console.warn('[ReportarScreen] Error al descargar grabación en desmontaje:', err);
-        });
+      if (recordingRef.current) {
+        recordingRef.current.getStatusAsync().then((status) => {
+          if (status.isRecording) {
+            recordingRef.current?.stopAndUnloadAsync().catch(() => {});
+          }
+        }).catch(() => {});
       }
     };
-  }, [recordingObj]);
+  }, []);
 
   // Manejador para grabar o detener audio
   const handleToggleRecord = async () => {
@@ -118,6 +124,7 @@ export default function ReportarScreen() {
         const uri = await stopAudioRecording(recordingObj);
         setIsRecording(false);
         setRecordingObj(null);
+        recordingRef.current = null;
 
         if (timerRef.current) {
           clearInterval(timerRef.current);
@@ -150,6 +157,7 @@ export default function ReportarScreen() {
 
         if (rec) {
           setRecordingObj(rec);
+          recordingRef.current = rec;
           setIsRecording(true);
 
           // Iniciar animación de pulso rojo
@@ -248,19 +256,60 @@ export default function ReportarScreen() {
     setPersonasAfectadas((prev) => prev + 1);
   };
 
+  // Manejador para alternar el uso de la dirección guardada del perfil
+  const handleToggleSavedAddress = () => {
+    if (!useSavedAddress) {
+      try {
+        const p = getProfile(db);
+        if (!p) {
+          Alert.alert('Sin perfil', 'No se encontró un perfil guardado.');
+          return;
+        }
+
+        let loadedSomething = false;
+
+        if (p.province && PROVINCIAS.includes(p.province)) {
+          setProvince(p.province);
+          loadedSomething = true;
+        }
+
+        if (p.address && p.address.trim()) {
+          setCorregimiento(p.address.trim());
+          loadedSomething = true;
+        }
+
+        setDistrict('');
+
+        if (loadedSomething) {
+          setUseSavedAddress(true);
+        } else {
+          Alert.alert(
+            'Dirección no disponible',
+            'No tienes una dirección registrada en tu perfil. Puedes completarla manualmente a continuación.'
+          );
+        }
+      } catch (err) {
+        console.warn('[ReportarScreen] Error al obtener dirección guardada:', err);
+      }
+    } else {
+      // Desactivar y habilitar edición libre
+      setUseSavedAddress(false);
+    }
+  };
+
   // Envío y ejecución del pipeline de IA
   const handleSubmit = async () => {
     console.log('[ReportarScreen] Validando datos para envío de reporte...');
 
-    const hasText = textRelato.trim().length > 0;
     const hasAudio = audioUri.trim().length > 0;
+    const hasText = textRelato.trim().length > 0;
     const hasImage = imageUri.trim().length > 0;
 
-    // 1. Validar al menos una modalidad presente
-    if (!hasText && !hasAudio && !hasImage) {
+    // 1. Validar regla de backend: La voz es obligatoria, el relato de texto y la foto son opcionales
+    if (!hasAudio) {
       Alert.alert(
-        'Datos requeridos',
-        'Por favor ingrese al menos un relato de texto, una nota de voz o una fotografía de la emergencia.'
+        'Audio requerido',
+        'La nota de voz / audio es obligatoria para reportar la emergencia. Por favor graba un audio o selecciona un archivo.'
       );
       return;
     }
@@ -343,16 +392,23 @@ export default function ReportarScreen() {
       setPersonasAfectadas(1);
       setDistrict('');
       setCorregimiento('');
+      setUseSavedAddress(false);
       setIsProcessing(false);
 
       // 7. Navegar directamente al detalle del reporte procesado
       router.push(`/report/${result.reportId}` as any);
-    } catch (err) {
-      console.error('[ReportarScreen] Error durante el procesamiento de triaje:', err);
+    } catch (err: any) {
+      console.error('[ReportarScreen] ❌ ERROR DURANTE EL PROCESAMIENTO:', {
+        name: err?.name,
+        message: err?.message,
+        stack: err?.stack,
+        code: err?.code,
+        raw: err,
+      });
       setIsProcessing(false);
       Alert.alert(
-        'Error de procesamiento',
-        'Ocurrió un inconveniente al procesar la emergencia con la IA local. Intente nuevamente.'
+        'Error de procesamiento con IA',
+        `${err?.name || 'Error'}: ${err?.message || String(err)}`
       );
     } finally {
       if (stageTimerRef.current) {
@@ -516,36 +572,78 @@ export default function ReportarScreen() {
             <Text style={styles.sectionTitle}>4. Ubicación</Text>
           </View>
 
-          {/* Selector de Provincia */}
-          <Text style={styles.inputLabel}>Provincia o Comarca *</Text>
+          {/* Botón interactivo para alternar dirección guardada (Estilo Cámara / Audio) */}
           <TouchableOpacity
-            style={styles.pickerSelector}
-            onPress={() => setIsProvinceModalVisible(true)}
-            activeOpacity={0.7}
+            style={[
+              styles.addressMainButton,
+              useSavedAddress && styles.addressMainButtonActive,
+            ]}
+            onPress={handleToggleSavedAddress}
+            activeOpacity={0.8}
           >
-            <Text style={styles.pickerSelectorText}>{province}</Text>
-            <Ionicons name="chevron-down" size={18} color="#94A3B8" />
+            <Ionicons
+              name={useSavedAddress ? 'checkmark-circle' : 'home'}
+              size={18}
+              color="#F8FAFC"
+            />
+            <Text style={styles.addressMainButtonText}>
+              {useSavedAddress
+                ? '✅ Usando mi dirección guardada'
+                : 'Usar mi dirección guardada'}
+            </Text>
           </TouchableOpacity>
 
-          {/* Distrito */}
-          <Text style={styles.inputLabel}>Distrito (Opcional)</Text>
-          <TextInput
-            style={styles.inputField}
-            placeholder="Ej: David, Panamá, Chitré..."
-            placeholderTextColor="#64748B"
-            value={district}
-            onChangeText={setDistrict}
-          />
+          {/* Formulario de Ubicación (deshabilitado y opaco cuando useSavedAddress es true) */}
+          <View
+            style={[
+              styles.locationFormContainer,
+              useSavedAddress && styles.locationFormDisabled,
+            ]}
+            pointerEvents={useSavedAddress ? 'none' : 'auto'}
+          >
+            {/* Selector de Provincia */}
+            <Text style={styles.inputLabel}>Provincia o Comarca *</Text>
+            <TouchableOpacity
+              style={[
+                styles.pickerSelector,
+                useSavedAddress && styles.inputDisabledStyle,
+              ]}
+              onPress={() => !useSavedAddress && setIsProvinceModalVisible(true)}
+              disabled={useSavedAddress}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.pickerSelectorText}>{province}</Text>
+              <Ionicons name="chevron-down" size={18} color="#94A3B8" />
+            </TouchableOpacity>
 
-          {/* Corregimiento */}
-          <Text style={styles.inputLabel}>Corregimiento / Referencia (Opcional)</Text>
-          <TextInput
-            style={styles.inputField}
-            placeholder="Ej: Calidonia, San Francisco, Dolega..."
-            placeholderTextColor="#64748B"
-            value={corregimiento}
-            onChangeText={setCorregimiento}
-          />
+            {/* Distrito */}
+            <Text style={styles.inputLabel}>Distrito (Opcional)</Text>
+            <TextInput
+              style={[
+                styles.inputField,
+                useSavedAddress && styles.inputDisabledStyle,
+              ]}
+              placeholder="Ej: David, Panamá, Chitré..."
+              placeholderTextColor="#64748B"
+              value={district}
+              onChangeText={setDistrict}
+              editable={!useSavedAddress}
+            />
+
+            {/* Corregimiento */}
+            <Text style={styles.inputLabel}>Corregimiento / Referencia (Opcional)</Text>
+            <TextInput
+              style={[
+                styles.inputField,
+                useSavedAddress && styles.inputDisabledStyle,
+              ]}
+              placeholder="Ej: Calidonia, San Francisco, Dolega..."
+              placeholderTextColor="#64748B"
+              value={corregimiento}
+              onChangeText={setCorregimiento}
+              editable={!useSavedAddress}
+            />
+          </View>
         </View>
 
         {/* Sección 5: Personas Afectadas */}
@@ -928,6 +1026,43 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  addressMainButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 14,
+    backgroundColor: '#3B82F6',
+  },
+  addressMainButtonActive: {
+    backgroundColor: '#1D4ED8',
+    borderWidth: 2,
+    borderColor: '#60A5FA',
+    shadowColor: '#3B82F6',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  addressMainButtonText: {
+    color: '#F8FAFC',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  locationFormContainer: {
+    transition: 'opacity 0.2s',
+  },
+  locationFormDisabled: {
+    opacity: 0.35,
+  },
+  inputDisabledStyle: {
+    backgroundColor: '#1E293B',
+    borderColor: '#1E293B',
+    color: '#64748B',
   },
   inputLabel: {
     fontSize: 12,

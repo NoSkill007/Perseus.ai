@@ -61,4 +61,36 @@ describe('Perseus AI - Local Triage Pipeline (Persona B)', () => {
     expect(result.needs).toContain('ALBERGUE');
     expect(result.isLocalInference).toBe(true);
   });
+
+  it('debe procesar reporte con nota de voz obligatoria y relato de texto opcional (audio-only)', async () => {
+    const input = {
+      audioUri: 'file:///mock/audio_emergencia_chiriqui.m4a',
+      province: 'Chiriquí',
+      operatorDeviceId: 'UNIT-TEST-DEVICE-05',
+    };
+
+    const result = await runTriagePipeline(input);
+
+    expect(result.reportId).toBeDefined();
+    expect(result.transcript).toBeDefined();
+    expect(result.isLocalInference).toBe(true);
+    expect(result.triagePriority).toBeDefined();
+  });
+
+  it('debe clasificar ROJO y necesidades de rescate/salud cuando hay personas atrapadas bajo la casa y heridas', async () => {
+    const input = {
+      textRelato: 'Estoy con 5 personas debajo de mi casa, hay gente herida y no nos podemos mover.',
+      province: 'Chiriquí',
+      operatorDeviceId: 'UNIT-TEST-DEVICE-06',
+    };
+
+    const result = await runTriagePipeline(input);
+
+    expect(result.triagePriority).toBe('ROJO');
+    expect(result.reportedPeopleCount).toBe(5);
+    expect(result.needs).toContain('ACCESO_RESCATE');
+    expect(result.needs).toContain('SALUD');
+    expect(result.needs).toContain('ALBERGUE');
+    expect(result.isLocalInference).toBe(true);
+  });
 });

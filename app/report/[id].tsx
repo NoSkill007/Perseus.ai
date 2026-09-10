@@ -6,12 +6,13 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { Ionicons } from '@expo/vector-icons';
-import { getReportById } from '../../src/services/reportService';
+import { getReportById, deleteReport } from '../../src/services/reportService';
 import type { ReportRecord, StartPriority } from '../../src/types/triageTypes';
 
 const PRIORITY_COLORS: Record<StartPriority, string> = {
@@ -58,6 +59,31 @@ export default function ReportDetailScreen() {
       setLoading(false);
     }, [db, id])
   );
+
+  const handleDeleteReport = () => {
+    Alert.alert(
+      'Eliminar Reporte',
+      '¿Estás seguro de que deseas eliminar este reporte de emergencia? Esta acción no se puede deshacer.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: () => {
+            if (id) {
+              deleteReport(db, id);
+              Alert.alert('Reporte eliminado', 'El reporte ha sido eliminado correctamente.', [
+                {
+                  text: 'OK',
+                  onPress: () => router.replace('/(tabs)/historial' as any),
+                },
+              ]);
+            }
+          },
+        },
+      ]
+    );
+  };
 
   if (loading) {
     return (
@@ -283,15 +309,26 @@ export default function ReportDetailScreen() {
         )}
 
         {/* Acciones */}
-        {report.source === 'local' && (
+        <View style={styles.actionsContainer}>
+          {report.source === 'local' && (
+            <TouchableOpacity
+              style={styles.editButton}
+              onPress={() => router.push('/(tabs)/sincronizar' as any)}
+            >
+              <Ionicons name="sync" size={20} color="#F8FAFC" />
+              <Text style={styles.editButtonText}>Transmitir por P2P a Rescatistas</Text>
+            </TouchableOpacity>
+          )}
+
           <TouchableOpacity
-            style={styles.editButton}
-            onPress={() => router.push('/(tabs)/sincronizar' as any)}
+            style={styles.deleteButton}
+            onPress={handleDeleteReport}
+            activeOpacity={0.8}
           >
-            <Ionicons name="sync" size={20} color="#F8FAFC" />
-            <Text style={styles.editButtonText}>Transmitir por P2P a Rescatistas</Text>
+            <Ionicons name="trash-outline" size={20} color="#EF4444" />
+            <Text style={styles.deleteButtonText}>Eliminar Reporte</Text>
           </TouchableOpacity>
-        )}
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -401,6 +438,10 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   localBadgeText: { color: '#22C55E', fontSize: 12, fontWeight: '600' },
+  actionsContainer: {
+    marginTop: 8,
+    gap: 12,
+  },
   editButton: {
     backgroundColor: '#3B82F6',
     borderRadius: 12,
@@ -409,7 +450,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     gap: 8,
-    marginTop: 8,
   },
   editButtonText: { color: '#F8FAFC', fontSize: 16, fontWeight: '700' },
+  deleteButton: {
+    backgroundColor: '#1E293B',
+    borderWidth: 1,
+    borderColor: '#EF4444',
+    borderRadius: 12,
+    padding: 16,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+  },
+  deleteButtonText: { color: '#EF4444', fontSize: 16, fontWeight: '700' },
 });

@@ -44,9 +44,10 @@ export async function runTriagePipeline(input: TriageInput): Promise<TriageResul
       try {
         transcript = await transcribeAudioLocally({ audioUri: input.audioUri });
         console.log(`[TriagePipeline] Transcripción completada: "${transcript}"`);
-      } catch (err) {
-        console.warn('[TriagePipeline] Advertencia en Fase 1 (ASR):', err);
-        transcript = '[Audio no procesable localmente]';
+      } catch (err: any) {
+        console.warn('[TriagePipeline] ASR no completó la transcripción en flujo principal:', err?.message || err);
+        // En el flujo de emergencia, si el audio falla o está en calibración, no bloquear el reporte:
+        transcript = input.textRelato || '[Nota de voz adjunta en el reporte]';
       }
     }
 
@@ -95,23 +96,15 @@ export async function runTriagePipeline(input: TriageInput): Promise<TriageResul
       isLocalInference: true, // 100% local garantizado
       executionTimeMs,
     };
-  } catch (criticalError) {
-    console.error('[TriagePipeline] Error crítico en el pipeline de IA:', criticalError);
-    
-    // Fallback seguro: no bloquear a la brigada, devolver objeto listo para edición humana
-    const executionTimeMs = Date.now() - startTime;
-    return {
-      reportId,
-      createdAt: Date.now(),
-      transcript,
-      visionSeverity,
-      extractedSummary: input.textRelato || 'Emergencia registrada sin procesamiento de IA.',
-      triagePriority: 'AMARILLO',
-      needs: ['AGUA_SANEAMIENTO', 'ALBERGUE'],
-      missingFields: ['Ubicación exacta', 'Revisión humana obligatoria'],
-      isLocalInference: true,
-      executionTimeMs,
-    };
+  } catch (criticalError: any) {
+    console.error('[TriagePipeline] ❌ ERROR CRÍTICO EN PIPELINE DE IA:', {
+      name: criticalError?.name,
+      message: criticalError?.message,
+      stack: criticalError?.stack,
+      cause: criticalError?.cause,
+      raw: criticalError,
+    });
+    throw criticalError;
   } finally {
     // Asegurar que ningún modelo quede cargado en RAM
     await qvacManager.unloadCurrentModel();

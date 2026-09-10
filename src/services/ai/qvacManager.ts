@@ -1,8 +1,28 @@
-import * as FileSystem from 'expo-file-system';
+let FileSystem: any = null;
+try {
+  FileSystem = require('expo-file-system/legacy');
+} catch {
+  try {
+    FileSystem = require('expo-file-system');
+  } catch {
+    FileSystem = null;
+  }
+}
+
+let AssetModule: any = null;
+try {
+  AssetModule = require('expo-asset');
+} catch {}
+
+let bundledWhisperAsset: any = null;
+try {
+  bundledWhisperAsset = require('../../../assets/models/whisper-base-q8_0.bin');
+} catch {}
+
 import * as QvacSdk from '@qvac/sdk';
 import { ModelAssetConfig, QvacStatus } from '../../types/triageTypes';
 
-const baseDocDir = (typeof FileSystem !== 'undefined' && FileSystem.documentDirectory) ? FileSystem.documentDirectory : '/models/';
+const baseDocDir = (FileSystem && FileSystem.documentDirectory) ? FileSystem.documentDirectory : '/models/';
 
 export const MODEL_REGISTRY: Record<string, ModelAssetConfig> = {
   ASR_WHISPER: {
@@ -37,6 +57,7 @@ export const MODEL_REGISTRY: Record<string, ModelAssetConfig> = {
 
 class QvacManager {
   private currentLoadedModelId: string | null = null;
+  private nativeModelIds: Record<string, string> = {};
   private isNativeLoaded: boolean = false;
   private isBusy: boolean = false;
   private qvacSdk: any = QvacSdk;
@@ -49,12 +70,37 @@ class QvacManager {
       this.qvacSdk = QvacSdk?.loadModel ? QvacSdk : (QvacSdk as any)?.default || QvacSdk;
 
       // Verificar directorio de modelos locales en entornos con sistema de archivos
-      if (FileSystem?.documentDirectory && FileSystem?.getInfoAsync) {
+      if (FileSystem?.documentDirectory && typeof FileSystem?.getInfoAsync === 'function') {
         const modelsDir = `${FileSystem.documentDirectory}models/`;
-        const dirInfo = await FileSystem.getInfoAsync(modelsDir);
-        if (!dirInfo.exists) {
-          await FileSystem.makeDirectoryAsync(modelsDir, { intermediates: true });
-        }
+        try {
+          const dirInfo = await FileSystem.getInfoAsync(modelsDir);
+          if (!dirInfo?.exists && typeof FileSystem?.makeDirectoryAsync === 'function') {
+            await FileSystem.makeDirectoryAsync(modelsDir, { intermediates: true });
+          }
+
+          // Desempaquetar modelo Whisper desde los assets del APK al almacenamiento local
+          if (bundledWhisperAsset && AssetModule) {
+            try {
+              const destFile = `${modelsDir}whisper-base-q8_0.bin`;
+              const fileInfo = await FileSystem.getInfoAsync(destFile);
+              if (!fileInfo?.exists || (fileInfo.size && fileInfo.size < 10000000)) {
+                console.log('[QVAC Manager] Extrayendo Whisper desde los assets del APK...');
+                const AssetClass = AssetModule.Asset || AssetModule;
+                const asset = AssetClass.fromModule(bundledWhisperAsset);
+                await asset.downloadAsync();
+                if (asset.localUri) {
+                  await FileSystem.copyAsync({
+                    from: asset.localUri,
+                    to: destFile,
+                  });
+                  console.log(`[QVAC Manager] Modelo Whisper extraído exitosamente a ${destFile}`);
+                }
+              }
+            } catch (unpackErr) {
+              console.warn('[QVAC Manager] Desempaquetado de asset Whisper en initialize:', unpackErr);
+            }
+          }
+        } catch {}
       }
 
       return {
@@ -98,46 +144,127 @@ class QvacManager {
       const config = MODEL_REGISTRY[modelId];
       console.log(`[QVAC Manager] Preparando modelo: ${config.id} (${config.filename})...`);
 
+      const candidatePaths = [
+        config.localPath,
+        `${baseDocDir}models/${config.filename}`,
+        `${baseDocDir}${config.filename}`,
+        `/data/user/0/ai.perseus.app/files/models/${config.filename}`,
+        `/data/local/tmp/${config.filename}`,
+        `/sdcard/models/${config.filename}`,
+        `/sdcard/${config.filename}`,
+      ];
+
+      let resolvedPath = config.localPath;
       let fileExists = false;
-      if (FileSystem?.getInfoAsync) {
-        try {
-          const fileInfo = await FileSystem.getInfoAsync(config.localPath);
-          fileExists = fileInfo.exists;
-          if (!fileExists) {
-            console.log(`[QVAC Manager] Archivo ${config.filename} no presente en disco local. Usando motor semántico on-device.`);
-          }
-        } catch (err) {
-          console.warn(`[QVAC Manager] Verificación de archivo:`, err);
+
+      if (FileSystem && typeof FileSystem.getInfoAsync === 'function') {
+        for (const candidate of candidatePaths) {
+          try {
+            const fileInfo = await FileSystem.getInfoAsync(candidate);
+            if (fileInfo?.exists && (!fileInfo.size || fileInfo.size > 10000000)) {
+              fileExists = true;
+              resolvedPath = candidate;
+              console.log(`[QVAC Manager] Archivo de modelo ${config.filename} válido en: ${resolvedPath} (${fileInfo.size || 'N/A'} bytes)`);
+              break;
+            }
+          } catch {}
         }
       }
 
+      // Si es Whisper y no está en disco, extraerlo on-demand
+      if (modelId === 'ASR_WHISPER' && !fileExists && bundledWhisperAsset && AssetModule && FileSystem) {
+        try {
+          console.log('[QVAC Manager] Extrayendo Whisper on-demand desde assets empaquetados...');
+          const AssetClass = AssetModule.Asset || AssetModule;
+          const asset = AssetClass.fromModule(bundledWhisperAsset);
+          await asset.downloadAsync();
+          if (asset.localUri) {
+            const destFile = `${baseDocDir}models/${config.filename}`;
+            try {
+              await FileSystem.copyAsync({
+                from: asset.localUri,
+                to: destFile,
+              });
+              resolvedPath = destFile;
+            } catch {
+              resolvedPath = asset.localUri;
+            }
+            fileExists = true;
+            console.log(`[QVAC Manager] Whisper extraído y listo en: ${resolvedPath}`);
+          }
+        } catch (err) {
+          console.warn('[QVAC Manager] Extracción on-demand de Whisper falló:', err);
+        }
+      }
+
+      if (!fileExists) {
+        console.log(`[QVAC Manager] Archivo ${config.filename} no presente en disco local. Usando motor semántico on-device.`);
+      }
+
       const sdk = this.getSdk();
-      if (sdk && typeof sdk.loadModel === 'function' && fileExists) {
+      if (fileExists && sdk && typeof sdk.loadModel === 'function') {
         try {
           const qvacModelType = config.modelType === 'asr'
             ? 'whispercpp-transcription'
             : 'llamacpp-completion';
 
-          await sdk.loadModel({
-            modelSrc: config.localPath,
-            modelType: qvacModelType,
-          });
+          const descriptor = (QvacSdk as any)?.[config.id] || (QvacSdk as any)?.[config.filename];
+
+          const cleanModelPath = resolvedPath.startsWith('file://')
+            ? resolvedPath.replace('file://', '')
+            : resolvedPath;
+
+          const modelConfig = config.modelType === 'asr'
+            ? {
+                n_threads: 2,
+                language: 'es',
+                contextParams: {
+                  use_gpu: false,
+                  flash_attn: false,
+                },
+              }
+            : {
+                contextParams: {
+                  use_gpu: false,
+                },
+              };
+
+          console.log(`[QVAC Manager] Invocando sdk.loadModel para ${modelId} con path: ${cleanModelPath}...`);
+          let instanceId: any = null;
+          if (descriptor) {
+            instanceId = await sdk.loadModel({ modelSrc: descriptor, modelConfig });
+          } else {
+            instanceId = await sdk.loadModel({
+              modelSrc: cleanModelPath,
+              modelType: qvacModelType,
+              modelConfig,
+            });
+          }
+
+          const resolvedInstanceId = typeof instanceId === 'string' ? instanceId : instanceId?.modelId || modelId;
+          this.nativeModelIds[modelId] = resolvedInstanceId;
           this.isNativeLoaded = true;
           this.currentLoadedModelId = modelId;
-          console.log(`[QVAC Manager] Modelo nativo ${modelId} cargado exitosamente en RAM.`);
+          console.log(`[QVAC Manager] Modelo nativo ${modelId} cargado exitosamente en RAM con instanceId: ${resolvedInstanceId}`);
           return true;
-        } catch (nativeErr) {
-          console.warn(`[QVAC Manager] Error al cargar pesos nativos de ${modelId}:`, nativeErr);
+        } catch (nativeErr: any) {
+          console.error(`[QVAC Manager] ❌ ERROR EN sdk.loadModel PARA ${modelId}:`, {
+            name: nativeErr?.name,
+            message: nativeErr?.message,
+            stack: nativeErr?.stack,
+            cause: nativeErr?.cause,
+            raw: nativeErr,
+          });
           this.isNativeLoaded = false;
         }
       }
 
       this.isNativeLoaded = false;
       this.currentLoadedModelId = modelId;
-      console.log(`[QVAC Manager] Modelo ${modelId} listo en modo semántico local.`);
+      console.log(`[QVAC Manager] Modelo ${modelId} preparado.`);
       return true;
-    } catch (error) {
-      console.error(`[QVAC Manager] Error preparando modelo ${modelId}:`, error);
+    } catch (error: any) {
+      console.error(`[QVAC Manager] ❌ Error general preparando modelo ${modelId}:`, error);
       this.currentLoadedModelId = null;
       this.isNativeLoaded = false;
       return false;
@@ -147,25 +274,37 @@ class QvacManager {
   }
 
   /**
+   * Retorna el ID de instancia nativa devuelto por QVAC SDK
+   */
+  getNativeModelId(modelId: string): string | null {
+    return this.nativeModelIds[modelId] || null;
+  }
+
+  /**
    * Liberación explícita de RAM para el modelo en uso
    */
   async unloadCurrentModel(): Promise<void> {
     if (!this.currentLoadedModelId) return;
 
-    console.log(`[QVAC Manager] Descargando modelo ${this.currentLoadedModelId} para liberar RAM...`);
+    const previousModel = this.currentLoadedModelId;
+    const targetUnloadId = this.nativeModelIds[previousModel] || previousModel;
+    console.log(`[QVAC Manager] Descargando modelo ${previousModel} (targetId: ${targetUnloadId}) para liberar RAM...`);
     try {
       if (this.isNativeLoaded) {
         const sdk = this.getSdk();
         if (sdk && typeof sdk.unloadModel === 'function') {
-          await sdk.unloadModel({ modelId: this.currentLoadedModelId });
+          await sdk.unloadModel({ modelId: targetUnloadId });
         }
       }
     } catch (e) {
       console.warn('[QVAC Manager] Advertencia al descargar modelo:', e);
     } finally {
-      console.log(`[QVAC Manager] RAM liberada para ${this.currentLoadedModelId}.`);
+      delete this.nativeModelIds[previousModel];
       this.currentLoadedModelId = null;
       this.isNativeLoaded = false;
+      // Pausa de seguridad (150ms) para garantizar que los hilos nativos C++ liberen la memoria antes del próximo modelo
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      console.log(`[QVAC Manager] RAM liberada para ${previousModel}. Listo para el siguiente modelo.`);
     }
   }
 

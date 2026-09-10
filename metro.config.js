@@ -3,6 +3,14 @@ const path = require('path');
 
 const config = getDefaultConfig(__dirname);
 
+// Add bin and gguf to asset extensions so Metro can bundle AI models
+if (!config.resolver.assetExts.includes('bin')) {
+  config.resolver.assetExts.push('bin');
+}
+if (!config.resolver.assetExts.includes('gguf')) {
+  config.resolver.assetExts.push('gguf');
+}
+
 // When bundling for web, alias @qvac/sdk to a web stub so Metro doesn't parse node/bare-kit files
 const defaultResolveRequest = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, moduleName, platform) => {

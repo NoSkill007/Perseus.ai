@@ -6,8 +6,9 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
+  Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,6 +19,11 @@ import {
   getReportCounts,
   updateReportStatus,
 } from '../../src/services/reportService';
+import {
+  claimReport,
+  getConflictingAssignments,
+  getAssignmentsForReport,
+} from '../../src/services/assignmentService';
 import type { UserProfile, ReportRecord, StartPriority } from '../../src/types/triageTypes';
 
 const PRIORITY_COLORS: Record<StartPriority, string> = {
@@ -41,12 +47,14 @@ function ReportCard({
   showActions,
   onAtender,
   onCompletar,
+  hasConflict,
 }: {
   report: ReportRecord;
   onPress: () => void;
   showActions?: boolean;
   onAtender?: () => void;
   onCompletar?: () => void;
+  hasConflict?: boolean;
 }) {
   const fecha = new Date(report.createdAt).toLocaleString('es-PA', {
     day: '2-digit',
@@ -67,6 +75,14 @@ function ReportCard({
       {report.locationReference && (
         <Text style={styles.cardLocation}>📍 {report.locationReference}</Text>
       )}
+
+      {hasConflict && (
+        <View style={styles.conflictBanner}>
+          <Ionicons name="warning" size={14} color="#EF4444" />
+          <Text style={styles.conflictText}>⚠️ Conflicto: Otra brigada también tomó este caso</Text>
+        </View>
+      )}
+
       <View style={styles.cardFooter}>
         {report.reportedPeopleCount && (
           <Text style={styles.cardMeta}>👥 {report.reportedPeopleCount} personas</Text>
@@ -80,7 +96,7 @@ function ReportCard({
           {report.status !== 'en_atencion' && (
             <TouchableOpacity style={styles.actionBtn} onPress={onAtender}>
               <Ionicons name="hand-left" size={16} color="#F8FAFC" />
-              <Text style={styles.actionText}>Atender</Text>
+              <Text style={styles.actionText}>Tomar Caso</Text>
             </TouchableOpacity>
           )}
           {report.status === 'en_atencion' && (
@@ -97,11 +113,13 @@ function ReportCard({
 
 export default function HomeScreen() {
   const db = useSQLiteContext();
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [recentReports, setRecentReports] = useState<ReportRecord[]>([]);
   const [receivedReports, setReceivedReports] = useState<ReportRecord[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
+  const [conflicts, setConflicts] = useState<Set<string>>(new Set());
   const [refreshing, setRefreshing] = useState(false);
 
   const loadData = useCallback(() => {
@@ -111,6 +129,9 @@ export default function HomeScreen() {
       setRecentReports(getRecentReports(db, 5));
       setReceivedReports(getReceivedReports(db));
       setCounts(getReportCounts(db));
+
+      const conflictList = getConflictingAssignments(db);
+      setConflicts(new Set(conflictList.map((c) => c.reportId)));
     } catch (err) {
       console.error('[Home] Error cargando datos:', err);
     }
@@ -129,12 +150,15 @@ export default function HomeScreen() {
   }, [loadData]);
 
   const handleAtender = (reportId: string) => {
-    updateReportStatus(db, reportId, 'en_atencion');
+    const nodeId = profile?.phone || 'nodo-local';
+    claimReport(db, reportId, nodeId, `Asignado a ${profile?.fullName || 'Brigada'}`);
+    Alert.alert('Caso Asignado', 'Has tomado este caso. Estado actualizado a EN ATENCIÓN.');
     loadData();
   };
 
   const handleCompletar = (reportId: string) => {
     updateReportStatus(db, reportId, 'completado');
+    Alert.alert('Caso Finalizado', 'El caso ha sido marcado como COMPLETADO.');
     loadData();
   };
 
@@ -144,7 +168,7 @@ export default function HomeScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 32 }]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#3B82F6" />}
       >
         {/* Header */}
@@ -155,7 +179,7 @@ export default function HomeScreen() {
           </Text>
           <View style={styles.roleBadge}>
             <Text style={styles.roleText}>
-              {isRescatista ? 'RESCATISTA' : 'CIUDADANO'}
+              {isRescatista ? 'RESCATISTA / BRIGADA' : 'CIUDADANO'}
             </Text>
           </View>
         </View>
@@ -194,6 +218,7 @@ export default function HomeScreen() {
                 <ReportCard
                   key={r.reportId}
                   report={r}
+                  hasConflict={conflicts.has(r.reportId)}
                   onPress={() => router.push(`/report/${r.reportId}`)}
                   showActions
                   onAtender={() => handleAtender(r.reportId)}
@@ -236,6 +261,20 @@ export default function HomeScreen() {
               ))
             )}
 
+            {/* Acceso a Laboratorio de Audio Whisper */}
+            <TouchableOpacity
+              style={styles.labCard}
+              onPress={() => router.push('/whisper-test')}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="mic-circle" size={28} color="#38BDF8" />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.labTitle}>Laboratorio Whisper ASR</Text>
+                <Text style={styles.labSubtitle}>Probar captura, carga y transcripción aislada</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#94A3B8" />
+            </TouchableOpacity>
+
             {/* Info */}
             <View style={styles.infoCard}>
               <Ionicons name="shield-checkmark" size={24} color="#22C55E" />
@@ -253,7 +292,7 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0F172A' },
   scroll: { flex: 1 },
-  scrollContent: { padding: 16, paddingBottom: 32 },
+  scrollContent: { padding: 16 },
   header: { alignItems: 'center', marginBottom: 24, marginTop: 8 },
   appTitle: { fontSize: 28, fontWeight: '800', color: '#3B82F6', letterSpacing: 1 },
   userName: { fontSize: 18, color: '#F8FAFC', marginTop: 4 },
@@ -294,6 +333,18 @@ const styles = StyleSheet.create({
   badgeText: { color: '#F8FAFC', fontSize: 11, fontWeight: '800' },
   statusBadge: { backgroundColor: '#334155', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
   statusText: { color: '#94A3B8', fontSize: 10, fontWeight: '600' },
+  conflictBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#451A1A',
+    padding: 8,
+    borderRadius: 6,
+    marginVertical: 6,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: '#EF4444',
+  },
+  conflictText: { color: '#FCA5A5', fontSize: 11, fontWeight: '600' },
   actionRow: { flexDirection: 'row', marginTop: 12, gap: 8 },
   actionBtn: {
     flexDirection: 'row',
@@ -334,4 +385,25 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   infoText: { fontSize: 13, color: '#94A3B8', flex: 1, lineHeight: 18 },
+  labCard: {
+    backgroundColor: '#1E293B',
+    borderRadius: 12,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#0284C7',
+  },
+  labTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#F8FAFC',
+  },
+  labSubtitle: {
+    fontSize: 12,
+    color: '#94A3B8',
+    marginTop: 2,
+  },
 });

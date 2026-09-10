@@ -112,7 +112,8 @@ export async function extractTriageWithLLM(
     }
 
     // 3. Parsear JSON con validación estricta de Enum START y campos geográficos
-    const parsed = parseAndValidateJSON(rawOutput, relatoText, province);
+    const fullInputText = relatoText || transcriptText || '';
+    const parsed = parseAndValidateJSON(rawOutput, fullInputText, province);
     return {
       ...parsed,
       rawOutput,
@@ -194,6 +195,13 @@ export function fallbackExtraction(
 
   const isCritical =
     combined.includes('atrapad') ||
+    combined.includes('debajo de') ||
+    combined.includes('bajo la casa') ||
+    combined.includes('bajo los escombros') ||
+    combined.includes('no nos podemos mover') ||
+    combined.includes('no podemos movernos') ||
+    combined.includes('inmovilizad') ||
+    combined.includes('herid') ||
     combined.includes('terremoto') ||
     combined.includes('sismo') ||
     combined.includes('colapso') ||
@@ -219,7 +227,9 @@ export function fallbackExtraction(
 
   // 5. Generar Resumen Estructurado Conciso
   let summary = relatoText || transcriptText || 'Emergencia registrada localmente.';
-  if (combined.includes('terremoto') || combined.includes('sismo')) {
+  if (combined.includes('debajo') || combined.includes('atrapad') || combined.includes('no nos podemos mover')) {
+    summary = `${peopleCount ? `${peopleCount} personas atrapadas/inmovilizadas` : 'Personas atrapadas'} con necesidad de rescate urgente en ${detectedLocation.formattedReference}. ${combined.includes('herid') ? 'Se reportan heridos en la escena.' : ''}`;
+  } else if (combined.includes('terremoto') || combined.includes('sismo')) {
     summary = `${peopleCount ? `${peopleCount} personas afectadas` : 'Personas afectadas'} tras terremoto en ${detectedLocation.formattedReference}. ${combined.includes('atrapad') ? 'Se reportan atrapados en estructura.' : ''}`;
   } else if (combined.includes('inundad') || combined.includes('río')) {
     summary = `${peopleCount ? `${peopleCount} personas en riesgo` : 'Personas afectadas'} por inundación en ${detectedLocation.formattedReference}.`;
@@ -242,11 +252,16 @@ export function fallbackExtraction(
 function deduceNeeds(text: string): DisasterNeedCategory[] {
   const needs: DisasterNeedCategory[] = [];
 
-  // Búsqueda y Rescate Urbano (USAR)
+  // Búsqueda y Rescate Urbano (USAR) / Atrapados
   if (
     text.includes('terremoto') ||
     text.includes('sismo') ||
     text.includes('atrapad') ||
+    text.includes('debajo') ||
+    text.includes('bajo la casa') ||
+    text.includes('bajo los escombros') ||
+    text.includes('no nos podemos mover') ||
+    text.includes('no podemos movernos') ||
     text.includes('colapso') ||
     text.includes('derrumbe') ||
     text.includes('deslizamiento') ||

@@ -339,14 +339,19 @@ export function reportExists(db: SQLiteDatabase, reportId: string): boolean {
 }
 
 /**
- * Elimina un reporte (solo borradores propios)
+ * Elimina un reporte por su ID
  */
 export function deleteReport(db: SQLiteDatabase, reportId: string): void {
-  db.runSync('DELETE FROM reports WHERE report_id = ? AND source = ? AND status = ?', [
-    reportId,
-    'local',
-    'borrador',
-  ]);
+  try {
+    db.runSync('DELETE FROM assignments WHERE report_id = ?', [reportId]);
+  } catch {}
+  try {
+    db.runSync('DELETE FROM sync_log WHERE report_id = ?', [reportId]);
+  } catch {}
+  try {
+    db.runSync('DELETE FROM sync_events WHERE report_id = ?', [reportId]);
+  } catch {}
+  db.runSync('DELETE FROM reports WHERE report_id = ?', [reportId]);
   console.log(`[ReportService] Reporte ${reportId} eliminado.`);
 }
 
