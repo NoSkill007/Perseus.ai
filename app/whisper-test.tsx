@@ -119,7 +119,7 @@ export default function WhisperTestScreen() {
       try {
         const info = await FileSystem.getInfoAsync(path, { size: true });
         if (info.exists && (!info.size || info.size > 10000000)) {
-          const mb = info.size ? (info.size / (1024 * 1024)).toFixed(1) : '141.0';
+          const mb = info.size ? (info.size / (1024 * 1024)).toFixed(1) : '41.5';
           setModelStatus('ready');
           setModelDetails(`${config.filename} (${mb} MB)`);
           addLog(`Modelo Whisper listo en: ${path} (${mb} MB)`, 'success');
@@ -132,7 +132,7 @@ export default function WhisperTestScreen() {
     if (!found) {
       setModelStatus('missing');
       setModelDetails('Archivo no encontrado o incompleto');
-      addLog('whisper-base-q8_0.bin no encontrado en rutas estándar.', 'warn');
+      addLog(`${config.filename} no encontrado en rutas estándar.`, 'warn');
     }
   };
 
@@ -346,7 +346,7 @@ export default function WhisperTestScreen() {
         <View style={styles.card}>
           <View style={styles.cardHeaderRow}>
             <Ionicons name="cube" size={20} color="#38BDF8" />
-            <Text style={styles.cardTitle}>Modelo Whisper (Base Q8_0)</Text>
+            <Text style={styles.cardTitle}>Modelo Whisper (Tiny Q8_0)</Text>
           </View>
           <View style={styles.modelStatusRow}>
             <View

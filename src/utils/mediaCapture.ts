@@ -10,6 +10,33 @@ export interface AudioRecordingState {
   durationMillis?: number;
 }
 
+export const WHISPER_AUDIO_RECORDING_OPTIONS: Audio.RecordingOptions = {
+  isMeteringEnabled: true,
+  android: {
+    extension: '.m4a',
+    outputFormat: Audio.AndroidOutputFormat.MPEG_4,
+    audioEncoder: Audio.AndroidAudioEncoder.AAC,
+    sampleRate: 16000,
+    numberOfChannels: 1,
+    bitRate: 64000,
+  },
+  ios: {
+    extension: '.wav',
+    outputFormat: Audio.IOSOutputFormat.LINEARPCM,
+    audioQuality: Audio.IOSAudioQuality.HIGH,
+    sampleRate: 16000,
+    numberOfChannels: 1,
+    bitRate: 256000,
+    linearPCMBitDepth: 16,
+    linearPCMIsBigEndian: false,
+    linearPCMIsFloat: false,
+  },
+  web: {
+    mimeType: 'audio/webm',
+    bitsPerSecond: 128000,
+  },
+};
+
 /**
  * Solicita permisos e inicia la grabación de audio local con feedback continuo
  */
@@ -32,7 +59,7 @@ export async function startAudioRecording(
     });
 
     const { recording } = await Audio.Recording.createAsync(
-      Audio.RecordingOptionsPresets.HIGH_QUALITY,
+      WHISPER_AUDIO_RECORDING_OPTIONS,
       onStatusUpdate,
       250 // Actualización cada 250ms para fluidez de cronómetro
     );
@@ -105,7 +132,8 @@ export async function takeCameraPhoto(): Promise<string | null> {
     const result = await ImagePicker.launchCameraAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
-      quality: 0.8,
+      aspect: [4, 3],
+      quality: 0.5,
     });
 
     if (!result.canceled && result.assets && result.assets.length > 0) {
@@ -132,7 +160,8 @@ export async function pickGalleryImage(): Promise<string | null> {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
-      quality: 0.8,
+      aspect: [4, 3],
+      quality: 0.5,
     });
 
     if (!result.canceled && result.assets && result.assets.length > 0) {
