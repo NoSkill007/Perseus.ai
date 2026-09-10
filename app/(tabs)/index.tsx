@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   RefreshControl,
   Alert,
+  Image,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -168,6 +169,13 @@ export default function HomeScreen() {
 
   const isRescatista = profile?.role === 'rescatista';
 
+  const displayShortName = useMemo(() => {
+    if (!profile?.fullName) return 'Usuario';
+    const parts = profile.fullName.trim().split(/\s+/);
+    if (parts.length <= 2) return parts.join(' ');
+    return `${parts[0]} ${parts[1]}`;
+  }, [profile?.fullName]);
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <ScrollView
@@ -175,16 +183,27 @@ export default function HomeScreen() {
         contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 32 }]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}
       >
-        {/* Header */}
+        {/* Header: Logo a la izquierda, Usuario y Rol a la derecha */}
         <View style={styles.header}>
-          <Text style={styles.appTitle}>Perseus.ai</Text>
-          <Text style={styles.userName}>
-            {isRescatista ? '🚑' : '🏠'} {profile?.fullName || 'Usuario'}
-          </Text>
-          <View style={styles.roleBadge}>
-            <Text style={styles.roleText}>
-              {isRescatista ? 'RESCATISTA / BRIGADA' : 'CIUDADANO'}
+          <Image
+            source={
+              theme.isDark
+                ? require('../../assets/splash.png')
+                : require('../../assets/adaptive-icon.png')
+            }
+            style={styles.appLogo}
+            resizeMode="contain"
+            accessibilityLabel="Perseus.ai"
+          />
+          <View style={styles.userContainer}>
+            <Text style={styles.userName} numberOfLines={1}>
+              {displayShortName}
             </Text>
+            <View style={styles.roleBadge}>
+              <Text style={styles.roleText}>
+                {isRescatista ? '🚑 RESCATISTA' : 'CIUDADANO'}
+              </Text>
+            </View>
           </View>
         </View>
 
@@ -314,19 +333,32 @@ function createStyles(theme: ThemeColors) {
     container: { flex: 1, backgroundColor: theme.background },
     scroll: { flex: 1 },
     scrollContent: { padding: 16 },
-    header: { alignItems: 'center', marginBottom: 24, marginTop: 8 },
-    appTitle: { fontSize: 28, fontWeight: '800', color: theme.primary, letterSpacing: 1 },
-    userName: { fontSize: 18, color: theme.text, marginTop: 4 },
+    header: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 20,
+      marginTop: 4,
+    },
+    appLogo: { width: 135, height: 45 },
+    userContainer: {
+      alignItems: 'flex-end',
+      justifyContent: 'center',
+      flexShrink: 1,
+      marginLeft: 12,
+    },
+    userName: { fontSize: 16, fontWeight: '700', color: theme.text, textAlign: 'right' },
     roleBadge: {
       backgroundColor: theme.cardInner,
-      paddingHorizontal: 12,
-      paddingVertical: 4,
-      borderRadius: 12,
-      marginTop: 6,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: 8,
+      marginTop: 4,
       borderWidth: 1,
       borderColor: theme.border,
+      alignSelf: 'flex-end',
     },
-    roleText: { color: theme.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 1 },
+    roleText: { color: theme.textMuted, fontSize: 10, fontWeight: '700', letterSpacing: 0.5 },
     statsRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 },
     statCard: {
       flex: 1,
@@ -385,14 +417,19 @@ function createStyles(theme: ThemeColors) {
     actionComplete: { backgroundColor: theme.success },
     actionText: { color: '#FFFFFF', fontSize: 13, fontWeight: '600' },
     ctaButton: {
-      backgroundColor: theme.primary,
+      backgroundColor: theme.isDark ? '#DC2626' : '#EF4444',
       borderRadius: 16,
       padding: 24,
       alignItems: 'center',
       marginBottom: 24,
+      shadowColor: '#DC2626',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.35,
+      shadowRadius: 8,
+      elevation: 6,
     },
     ctaText: { fontSize: 20, fontWeight: '800', color: '#FFFFFF', marginTop: 8 },
-    ctaSubtext: { fontSize: 13, color: '#DBEAFE', marginTop: 4 },
+    ctaSubtext: { fontSize: 13, color: '#FEE2E2', marginTop: 4, textAlign: 'center' },
     emptyCard: {
       backgroundColor: theme.card,
       borderRadius: 12,
