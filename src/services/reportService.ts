@@ -351,6 +351,29 @@ export function markReportAckReceived(db: SQLiteDatabase, reportId: string): voi
 }
 
 /**
+ * Asocia un archivo multimedia recibido vía P2P (audio o imagen) a un reporte existente
+ */
+export function attachReportMedia(
+  db: SQLiteDatabase,
+  reportId: string,
+  fileUri: string,
+  mediaType: 'audio' | 'image'
+): boolean {
+  try {
+    const col = mediaType === 'audio' ? 'audio_uri' : 'image_uri';
+    db.runSync(
+      `UPDATE reports SET ${col} = ?, updated_at = ? WHERE report_id = ?`,
+      [fileUri, Date.now(), reportId]
+    );
+    console.log(`[ReportService] Adjunto multimedia (${mediaType}) asociado al reporte ${reportId}.`);
+    return true;
+  } catch (err) {
+    console.warn(`[ReportService] Error asociando multimedia al reporte ${reportId}:`, err);
+    return false;
+  }
+}
+
+/**
  * Verifica si un reporte ya existe (deduplicación P2P)
  */
 export function reportExists(db: SQLiteDatabase, reportId: string): boolean {

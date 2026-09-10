@@ -46,6 +46,26 @@ import {
   PairedDevice,
   BleBeaconDetection,
 } from '../../src/services/bluetoothNative';
+import {
+  isNearbySupported,
+  requestNearbyPermissions,
+  startAdvertising as startNearbyAdvertising,
+  stopAdvertising as stopNearbyAdvertising,
+  startDiscovery as startNearbyDiscovery,
+  stopDiscovery as stopNearbyDiscovery,
+  requestConnection as requestNearbyConnection,
+  disconnect as disconnectNearby,
+  disconnectAll as disconnectNearbyAll,
+  onEndpointFound,
+  onEndpointLost,
+  onConnected as onNearbyConnected,
+  onDisconnected as onNearbyDisconnected,
+  onBytesReceived as onNearbyBytesReceived,
+  onFileReceived as onNearbyFileReceived,
+  onTransferProgress as onNearbyTransferProgress,
+  NearbyEndpoint,
+} from '../../src/services/nearbyNative';
+import { handleIncomingNearbyFile } from '../../src/services/syncEngine';
 import type {
   ReportRecord,
   UserProfile,
@@ -95,9 +115,16 @@ export default function SincronizarScreen() {
   const insets = useSafeAreaInsets();
   const [profile, setProfile] = useState<UserProfile | null>(null);
 
-  // Modo de transporte: Wi-Fi Hotspot vs Bluetooth
-  const [transport, setTransport] = useState<P2PTransportType>('wifi_lan');
+  // Modo de transporte: Nearby vs Wi-Fi Hotspot vs Bluetooth
+  const [transport, setTransport] = useState<P2PTransportType>('nearby');
   const [peerAddress, setPeerAddress] = useState('192.168.43.1'); // IP hotspot default o ID BLE
+
+  // Estados de Google Nearby Connections (P2P Cluster)
+  const [nearbyEndpoints, setNearbyEndpoints] = useState<NearbyEndpoint[]>([]);
+  const [connectedNearbyEndpoints, setConnectedNearbyEndpoints] = useState<NearbyEndpoint[]>([]);
+  const [isNearbyActive, setIsNearbyActive] = useState(false);
+  const [connectingEndpointId, setConnectingEndpointId] = useState<string | null>(null);
+  const nearbySubRefs = useRef<{ remove: () => void }[]>([]);
 
   // Estados de Baliza Continua (Beacon SOS)
   const [isBeaconActive, setIsBeaconActive] = useState(false);
@@ -351,9 +378,16 @@ export default function SincronizarScreen() {
     return () => {
       btSubscriptionRef.current?.remove();
       bleRadarSubRef.current?.remove();
+      nearbySubRefs.current.forEach((sub) => sub.remove());
+      nearbySubRefs.current = [];
       if (isBluetoothNativeSupported()) {
         stopBluetoothServer().catch(() => {});
         stopBleRadar().catch(() => {});
+      }
+      if (isNearbySupported()) {
+        disconnectNearbyAll().catch(() => {});
+        stopNearbyDiscovery().catch(() => {});
+        stopNearbyAdvertising().catch(() => {});
       }
     };
   }, []);
@@ -710,6 +744,193 @@ export default function SincronizarScreen() {
     }
   };
 
+  const toggleNearby = async () => {
+    if (isNearbyActive) {
+      nearbySubRefs.current.forEach((sub) => sub.remove());
+      nearbySubRefs.current = [];
+      await stopNearbyDiscovery().catch(() => {});
+      await stopNearbyAdvertising().catch(() => {});
+      await disconnectNearbyAll().catch(() => {});
+      setIsNearbyActive(false);
+      setNearbyEndpoints([]);
+      setConnectedNearbyEndpoints([]);
+      setConnectingEndpointId(null);
+      console.log('[Nearby UI] Red Nearby detenida');
+    } else {
+      const granted = await requestNearbyPermissions();
+      if (!granted) {
+        Alert.alert(
+          'Permiso Requerido',
+          'Se requieren permisos de Dispositivos Cercanos / Wi-Fi para usar Google Nearby Connections.'
+        );
+        return;
+      }
+
+      setIsNearbyActive(true);
+      const myName = profile?.fullName || (isRescatista ? 'Brigada-Rescate' : 'Ciudadano-SOS');
+
+      try {
+        nearbySubRefs.current.forEach((sub) => sub.remove());
+        nearbySubRefs.current = [];
+
+        const subFound = onEndpointFound((ep) => {
+          console.log('[Nearby UI] Endpoint encontrado:', ep.endpointName, ep.endpointId);
+          setNearbyEndpoints((prev) => {
+            if (prev.some((e) => e.endpointId === ep.endpointId)) return prev;
+            return [...prev, ep];
+          });
+        });
+
+        const subLost = onEndpointLost((ep) => {
+          console.log('[Nearby UI] Endpoint perdido:', ep.endpointId);
+          setNearbyEndpoints((prev) => prev.filter((e) => e.endpointId !== ep.endpointId));
+          setConnectedNearbyEndpoints((prev) => prev.filter((e) => e.endpointId !== ep.endpointId));
+        });
+
+        const subConnected = onNearbyConnected((ep) => {
+          console.log('[Nearby UI] Endpoint conectado:', ep.endpointName, ep.endpointId);
+          setConnectingEndpointId(null);
+          setConnectedNearbyEndpoints((prev) => {
+            if (prev.some((e) => e.endpointId === ep.endpointId)) return prev;
+            return [...prev, ep];
+          });
+          Alert.alert(
+            '🤝 Dispositivo Conectado',
+            `¡Conexión establecida con ${ep.endpointName} por Google Nearby! Listo para transferir reportes.`
+          );
+        });
+
+        const subDisconnected = onNearbyDisconnected((ep) => {
+          console.log('[Nearby UI] Endpoint desconectado:', ep.endpointId);
+          setConnectedNearbyEndpoints((prev) => prev.filter((e) => e.endpointId !== ep.endpointId));
+        });
+
+        const subBytes = onNearbyBytesReceived((event) => {
+          console.log('[Nearby UI] Bytes recibidos de:', event.endpointId);
+          try {
+            const packet = JSON.parse(event.data);
+            const res = processIncomingPacket(db, packet, 'nearby');
+            if (res.success) {
+              Alert.alert(
+                '📥 Reporte Recibido vía Nearby',
+                `¡Se recibieron ${res.processedCount} reporte(s) en tiempo real! Guardados en SQLite local.`
+              );
+              loadData();
+            }
+          } catch (e) {
+            console.warn('[Nearby UI] Error parseando JSON de bytes:', e);
+          }
+        });
+
+        const subFile = onNearbyFileReceived((event) => {
+          console.log('[Nearby UI] Archivo recibido:', event.fileName, event.fileUri);
+          const res = handleIncomingNearbyFile(db, event);
+          if (res.success) {
+            Alert.alert(
+              '📎 Archivo Multimedia Recibido',
+              `Se recibió ${res.mediaType === 'image' ? 'la foto' : 'el audio'} (${event.fileName}) y se vinculó al reporte.`
+            );
+            loadData();
+          }
+        });
+
+        const subProgress = onNearbyTransferProgress((event) => {
+          setSyncProgress(event.progress);
+          if (event.totalBytes > 0) {
+            const kbs = Math.round(event.bytesTransferred / 1024);
+            const totalKbs = Math.round(event.totalBytes / 1024);
+            setSyncStatusMsg(`Transfiriendo archivo: ${kbs} KB de ${totalKbs} KB (${Math.round(event.progress * 100)}%)`);
+          }
+        });
+
+        nearbySubRefs.current = [
+          subFound,
+          subLost,
+          subConnected,
+          subDisconnected,
+          subBytes,
+          subFile,
+          subProgress,
+        ];
+
+        await startNearbyAdvertising(myName);
+        await startNearbyDiscovery();
+        console.log('[Nearby UI] Advertising y Discovery iniciados como:', myName);
+      } catch (err: any) {
+        console.error('[Nearby UI] Error activando Nearby:', err);
+        const errMsg = err?.message || String(err);
+        let userMsg = errMsg;
+        if (errMsg.includes('8034') || errMsg.includes('ACCESS_COARSE_LOCATION') || errMsg.includes('LOCATION')) {
+          userMsg = 'Para usar la Red Nearby, por favor activa la "Ubicación" (GPS) en los ajustes rápidos de tu teléfono (en la barra superior de notificaciones).';
+        }
+        Alert.alert('Ubicación Requerida', userMsg);
+        setIsNearbyActive(false);
+      }
+    }
+  };
+
+  const handleConnectToNearbyEndpoint = async (ep: NearbyEndpoint) => {
+    try {
+      setConnectingEndpointId(ep.endpointId);
+      await requestNearbyConnection(ep.endpointId, profile?.fullName || 'Perseus-Dispositivo');
+      console.log('[Nearby] Solicitud de conexión enviada a:', ep.endpointName);
+    } catch (err: any) {
+      Alert.alert('Error de Conexión', err.message || 'No se pudo conectar al dispositivo.');
+      setConnectingEndpointId(null);
+    }
+  };
+
+  const handleSendReportsViaNearby = async (targetEndpointId: string) => {
+    if (selectedReportIds.size === 0) {
+      Alert.alert('Sin selección', 'Selecciona al menos un reporte para enviar.');
+      return;
+    }
+
+    setIsSyncing(true);
+    setSyncProgress(0.1);
+    setSyncStatusMsg('Iniciando transmisión Nearby (JSON + Audio + Fotos)...');
+
+    const deviceId = profile?.phone || 'nodo-nearby-01';
+
+    try {
+      const result = await syncReportsToPeer(db, {
+        reportIds: Array.from(selectedReportIds),
+        targetAddress: targetEndpointId,
+        transport: 'nearby',
+        localProfile: profile,
+        deviceId,
+        onProgress: (progress, message) => {
+          setSyncProgress(progress);
+          setSyncStatusMsg(message);
+        },
+      });
+
+      if (result.success) {
+        Alert.alert(
+          '✅ Sincronización Exitosa',
+          `Se transmitieron ${result.reportsSent} reporte(s) vía Google Nearby Connections (${result.bytesTransferred} bytes transferidos). ¡Incluyendo archivos de audio y fotos!`
+        );
+        setSelectedReportIds(new Set());
+      } else {
+        Alert.alert('Aviso', result.error || 'No se pudo completar la transferencia Nearby.');
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Fallo durante la sincronización Nearby.');
+    } finally {
+      setIsSyncing(false);
+      setSyncProgress(0);
+      setSyncStatusMsg('');
+      loadData();
+    }
+  };
+
+  const handleDisconnectNearby = async (endpointId: string) => {
+    try {
+      await disconnectNearby(endpointId);
+      setConnectedNearbyEndpoints((prev) => prev.filter((e) => e.endpointId !== endpointId));
+    } catch {}
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <ScrollView
@@ -723,14 +944,48 @@ export default function SincronizarScreen() {
           </Text>
         </View>
 
-        {/* Selector de Transporte (Wi-Fi vs Bluetooth) */}
+        {/* Selector de Transporte (Nearby vs Wi-Fi vs Bluetooth) */}
         <View style={styles.transportContainer}>
+          <TouchableOpacity
+            style={[
+              styles.transportButton,
+              transport === 'nearby' && styles.transportButtonActive,
+            ]}
+            onPress={async () => {
+              if (isListening) {
+                setIsListening(false);
+                await stopBluetoothServer().catch(() => {});
+                await stopBleRadar().catch(() => {});
+                await stopHttpServer().catch(() => {});
+              }
+              setTransport('nearby');
+            }}
+            activeOpacity={0.8}
+          >
+            <Ionicons
+              name="radio"
+              size={18}
+              color={transport === 'nearby' ? '#F8FAFC' : '#38BDF8'}
+            />
+            <Text
+              style={[
+                styles.transportButtonText,
+                transport === 'nearby' && styles.transportButtonTextActive,
+              ]}
+            >
+              Nearby
+            </Text>
+          </TouchableOpacity>
+
           <TouchableOpacity
             style={[
               styles.transportButton,
               transport === 'wifi_lan' && styles.transportButtonActive,
             ]}
             onPress={async () => {
+              if (isNearbyActive) {
+                await toggleNearby();
+              }
               if (isListening) {
                 setIsListening(false);
                 await stopBluetoothServer().catch(() => {});
@@ -743,7 +998,7 @@ export default function SincronizarScreen() {
           >
             <Ionicons
               name="wifi"
-              size={20}
+              size={18}
               color={transport === 'wifi_lan' ? '#F8FAFC' : '#94A3B8'}
             />
             <Text
@@ -752,7 +1007,7 @@ export default function SincronizarScreen() {
                 transport === 'wifi_lan' && styles.transportButtonTextActive,
               ]}
             >
-              Wi-Fi Hotspot
+              Wi-Fi
             </Text>
           </TouchableOpacity>
 
@@ -762,6 +1017,9 @@ export default function SincronizarScreen() {
               transport === 'bluetooth' && styles.transportButtonActive,
             ]}
             onPress={async () => {
+              if (isNearbyActive) {
+                await toggleNearby();
+              }
               if (isListening) {
                 setIsListening(false);
                 await stopBluetoothServer().catch(() => {});
@@ -785,7 +1043,7 @@ export default function SincronizarScreen() {
           >
             <Ionicons
               name="bluetooth"
-              size={20}
+              size={18}
               color={transport === 'bluetooth' ? '#F8FAFC' : '#94A3B8'}
             />
             <Text
@@ -818,8 +1076,222 @@ export default function SincronizarScreen() {
           </View>
         </View>
 
-        {/* ==================== VISTA RESCATISTA ==================== */}
-        {isRescatista ? (
+        {/* ==================== VISTA GOOGLE NEARBY CONNECTIONS ==================== */}
+        {transport === 'nearby' ? (
+          <>
+            <View style={[styles.card, { borderColor: '#3B82F6', borderWidth: 1.5 }]}>
+              <View style={styles.cardHeaderRow}>
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Ionicons name="radio" size={20} color="#38BDF8" />
+                    <Text style={[styles.cardTitle, { flexShrink: 1 }]}>Red Mesh Nearby (Cluster P2P)</Text>
+                  </View>
+                  <Text style={styles.cardDesc}>
+                    {isNearbyActive
+                      ? 'Conexión directa automática por Wi-Fi Direct y BLE sin internet'
+                      : 'Descubre y conecta pares cercanos para transferir reportes con audio y fotos.'}
+                  </Text>
+                </View>
+                <View style={[styles.statusDot, { backgroundColor: isNearbyActive ? '#22C55E' : '#EF4444' }]} />
+              </View>
+
+              <TouchableOpacity
+                style={[styles.mainButton, isNearbyActive && styles.mainButtonDanger]}
+                onPress={toggleNearby}
+                activeOpacity={0.8}
+              >
+                <Ionicons
+                  name={isNearbyActive ? 'stop-circle' : 'play-circle'}
+                  size={20}
+                  color="#F8FAFC"
+                />
+                <Text style={styles.mainButtonText}>
+                  {isNearbyActive ? 'Detener Red Nearby' : 'Activar Red Nearby'}
+                </Text>
+              </TouchableOpacity>
+
+              {/* Si está activo, mostrar dispositivos descubiertos y conectados */}
+              {isNearbyActive && (
+                <View style={{ marginTop: 14 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: '#CBD5E1' }}>
+                      Pares Detectados ({nearbyEndpoints.length}):
+                    </Text>
+                    <ActivityIndicator size="small" color="#38BDF8" />
+                  </View>
+
+                  {nearbyEndpoints.length === 0 ? (
+                    <View style={{ paddingVertical: 12, alignItems: 'center' }}>
+                      <Text style={{ color: '#94A3B8', fontSize: 12, textAlign: 'center' }}>
+                        Buscando y anunciando en el cluster... Acerca otro teléfono con Perseus.ai
+                      </Text>
+                    </View>
+                  ) : (
+                    nearbyEndpoints.map((ep) => {
+                      const isConnected = connectedNearbyEndpoints.some((c) => c.endpointId === ep.endpointId);
+                      const isConnecting = connectingEndpointId === ep.endpointId;
+
+                      return (
+                        <View
+                          key={ep.endpointId}
+                          style={{
+                            backgroundColor: '#0F172A',
+                            borderRadius: 10,
+                            padding: 12,
+                            marginTop: 8,
+                            borderWidth: 1,
+                            borderColor: isConnected ? '#22C55E' : '#334155',
+                          }}
+                        >
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <View style={{ flex: 1 }}>
+                              <Text style={{ color: '#F8FAFC', fontSize: 14, fontWeight: '700' }}>
+                                {ep.endpointName}
+                              </Text>
+                              <Text style={{ color: '#94A3B8', fontSize: 11, marginTop: 2 }}>
+                                ID: {ep.endpointId} • P2P Cluster
+                              </Text>
+                            </View>
+
+                            <View
+                              style={{
+                                backgroundColor: isConnected ? '#22C55E20' : '#3B82F620',
+                                borderColor: isConnected ? '#22C55E' : '#3B82F6',
+                                borderWidth: 1,
+                                paddingVertical: 2,
+                                paddingHorizontal: 8,
+                                borderRadius: 6,
+                              }}
+                            >
+                              <Text
+                                style={{
+                                  color: isConnected ? '#22C55E' : '#38BDF8',
+                                  fontSize: 11,
+                                  fontWeight: '800',
+                                }}
+                              >
+                                {isConnected ? 'CONECTADO' : 'DISPONIBLE'}
+                              </Text>
+                            </View>
+                          </View>
+
+                          {/* Botones de acción para este par */}
+                          <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+                            {!isConnected ? (
+                              <TouchableOpacity
+                                style={[
+                                  styles.mainButton,
+                                  { flex: 1, marginTop: 0, paddingVertical: 8, backgroundColor: '#3B82F6' },
+                                ]}
+                                onPress={() => handleConnectToNearbyEndpoint(ep)}
+                                disabled={isConnecting}
+                                activeOpacity={0.8}
+                              >
+                                {isConnecting ? (
+                                  <ActivityIndicator size="small" color="#F8FAFC" />
+                                ) : (
+                                  <Ionicons name="link" size={16} color="#F8FAFC" />
+                                )}
+                                <Text style={[styles.mainButtonText, { fontSize: 13 }]}>
+                                  {isConnecting ? 'Conectando...' : 'Conectar'}
+                                </Text>
+                              </TouchableOpacity>
+                            ) : (
+                              <>
+                                <TouchableOpacity
+                                  style={[
+                                    styles.mainButton,
+                                    { flex: 2, marginTop: 0, paddingVertical: 8, backgroundColor: '#16A34A' },
+                                  ]}
+                                  onPress={() => handleSendReportsViaNearby(ep.endpointId)}
+                                  activeOpacity={0.8}
+                                >
+                                  <Ionicons name="send" size={16} color="#F8FAFC" />
+                                  <Text style={[styles.mainButtonText, { fontSize: 13 }]}>
+                                    Enviar {selectedReportIds.size} Reporte(s)
+                                  </Text>
+                                </TouchableOpacity>
+
+                                <TouchableOpacity
+                                  style={[
+                                    styles.secondaryButton,
+                                    { flex: 1, marginTop: 0, paddingVertical: 8, borderColor: '#EF4444' },
+                                  ]}
+                                  onPress={() => handleDisconnectNearby(ep.endpointId)}
+                                  activeOpacity={0.8}
+                                >
+                                  <Text style={[styles.secondaryButtonText, { color: '#EF4444', fontSize: 13 }]}>
+                                    Desconectar
+                                  </Text>
+                                </TouchableOpacity>
+                              </>
+                            )}
+                          </View>
+                        </View>
+                      );
+                    })
+                  )}
+                </View>
+              )}
+
+              {/* Barra de progreso Nearby */}
+              {isSyncing && (
+                <View style={styles.progressContainer}>
+                  <View style={[styles.progressBar, { width: `${syncProgress * 100}%` }]} />
+                  <Text style={styles.progressText}>{syncStatusMsg}</Text>
+                </View>
+              )}
+            </View>
+
+            {/* Selección de Reportes para Transmisión Nearby */}
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>
+                📋 Seleccionar Reportes para Envío ({pendingReports.length})
+              </Text>
+              <Text style={styles.cardDesc}>
+                Los reportes seleccionados se enviarán con su ficha clínica JSON, notas de voz y fotos adjuntas.
+              </Text>
+
+              {pendingReports.length === 0 ? (
+                <View style={styles.emptyContainer}>
+                  <Ionicons name="checkmark-circle-outline" size={36} color="#22C55E" />
+                  <Text style={styles.emptyText}>No tienes reportes pendientes por sincronizar</Text>
+                </View>
+              ) : (
+                pendingReports.map((r) => {
+                  const isSelected = selectedReportIds.has(r.reportId);
+                  return (
+                    <TouchableOpacity
+                      key={r.reportId}
+                      style={[styles.reportItem, isSelected && styles.reportItemSelected]}
+                      onPress={() => toggleReportSelection(r.reportId)}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons
+                        name={isSelected ? 'checkbox' : 'square-outline'}
+                        size={22}
+                        color={isSelected ? '#3B82F6' : '#64748B'}
+                      />
+                      <View style={{ flex: 1, marginLeft: 10 }}>
+                        <Text style={styles.reportSummary} numberOfLines={2}>
+                          {r.extractedSummary}
+                        </Text>
+                        <Text style={styles.reportMeta}>
+                          {r.triagePriority} • {r.status} •{' '}
+                          {new Date(r.createdAt).toLocaleTimeString('es-PA')}
+                          {r.audioUri ? ' • 🎙️ Audio' : ''}
+                          {r.imageUri ? ' • 📷 Foto' : ''}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })
+              )}
+            </View>
+          </>
+        ) : (
+          /* ==================== VISTAS ORIGINALES (WI-FI / BLUETOOTH) ==================== */
+          isRescatista ? (
           <>
             <View style={styles.card}>
               <View style={styles.cardHeaderRow}>
@@ -1150,7 +1622,8 @@ export default function SincronizarScreen() {
               )}
             </View>
           </>
-        )}
+        )
+      )}
 
         {/* Bitácora de Auditoría P2P (Auditoría para el jurado) */}
         <View style={styles.card}>
@@ -1596,7 +2069,7 @@ const styles = StyleSheet.create({
   },
   mainButtonDanger: { backgroundColor: '#EF4444' },
   mainButtonDisabled: { backgroundColor: '#334155' },
-  mainButtonText: { color: '#F8FAFC', fontSize: 15, fontWeight: '700' },
+  mainButtonText: { color: '#F8FAFC', fontSize: 14, fontWeight: '700' },
   secondaryButton: {
     backgroundColor: 'transparent',
     borderRadius: 10,

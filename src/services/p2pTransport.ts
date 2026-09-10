@@ -16,6 +16,11 @@ import {
   startBleBeacon,
   stopBleBeacon,
 } from './bluetoothNative';
+import {
+  isNearbySupported,
+  sendBytes as sendNearbyBytes,
+  sendFile as sendNearbyFile,
+} from './nearbyNative';
 
 export const DEFAULT_P2P_PORT = 7890;
 export const DEFAULT_TIMEOUT_MS = 6000;
@@ -410,6 +415,103 @@ export async function sendPacketContinuousBeacon(
 }
 
 /**
+ * Envía un paquete a través de Google Nearby Connections (P2P Cluster sobre BLE / Wi-Fi Direct)
+ * Transmite el JSON principal en BYTES payload y cualquier multimedia asociado en FILE payloads.
+ */
+export async function sendPacketViaNearby(
+  targetEndpointId: string,
+  packet: P2PPacket,
+  onProgress?: (progress: number) => void
+): Promise<{ success: boolean; response?: any; error?: string; bytes: number }> {
+  const jsonStr = JSON.stringify(packet);
+  const jsonBytes = new TextEncoder().encode(jsonStr).length;
+
+  if (!isNearbySupported()) {
+    return {
+      success: false,
+      error: 'Nearby Connections no soportado en esta plataforma.',
+      bytes: 0,
+    };
+  }
+
+  try {
+    if (onProgress) onProgress(0.1);
+
+    // 1. Enviar el paquete estructurado JSON por canal BYTES
+    const bytesRes = await sendNearbyBytes(targetEndpointId, jsonStr);
+    if (!bytesRes.success) {
+      return {
+        success: false,
+        error: bytesRes.error || `Error al enviar paquete JSON a ${targetEndpointId}`,
+        bytes: 0,
+      };
+    }
+
+    let totalBytesTransferred = jsonBytes;
+
+    // 2. Si el payload contiene reportes con archivos adjuntos (audioUri, imageUri), transmitirlos vía FILE
+    const reports = (packet.payload as any)?.reports || packet.reports;
+    if (Array.isArray(reports) && reports.length > 0) {
+      const filesToSend: { path: string; meta: any }[] = [];
+
+      for (const rep of reports) {
+        if (rep.audioUri && typeof rep.audioUri === 'string' && rep.audioUri.length > 0) {
+          filesToSend.push({
+            path: rep.audioUri,
+            meta: {
+              type: 'audio',
+              reportId: rep.reportId,
+              fileName: rep.audioUri.split('/').pop() || 'audio.m4a',
+            },
+          });
+        }
+        if (rep.imageUri && typeof rep.imageUri === 'string' && rep.imageUri.length > 0) {
+          filesToSend.push({
+            path: rep.imageUri,
+            meta: {
+              type: 'image',
+              reportId: rep.reportId,
+              fileName: rep.imageUri.split('/').pop() || 'photo.jpg',
+            },
+          });
+        }
+      }
+
+      const totalFiles = filesToSend.length;
+      for (let i = 0; i < totalFiles; i++) {
+        const item = filesToSend[i];
+        if (onProgress) {
+          onProgress(0.2 + ((i + 1) / (totalFiles + 1)) * 0.7);
+        }
+        const fileRes = await sendNearbyFile(targetEndpointId, item.path, item.meta);
+        if (fileRes.success && fileRes.fileSize) {
+          totalBytesTransferred += fileRes.fileSize;
+        }
+      }
+    }
+
+    if (onProgress) onProgress(1.0);
+
+    return {
+      success: true,
+      response: {
+        ackPacketId: packet.packetId,
+        receivedAt: Date.now(),
+        status: 'received_via_nearby',
+        nodeId: targetEndpointId,
+      },
+      bytes: totalBytesTransferred,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err.message || 'Fallo de transmisión Nearby Connections',
+      bytes: 0,
+    };
+  }
+}
+
+/**
  * Despachador unificado de paquetes P2P según el modo de transporte
  */
 export async function dispatchPacket(
@@ -422,6 +524,10 @@ export async function dispatchPacket(
     onProgress?: (p: number) => void;
   }
 ): Promise<{ success: boolean; response?: any; error?: string; bytes: number }> {
+  if (options.transport === 'nearby') {
+    return sendPacketViaNearby(options.targetAddress, packet, options.onProgress);
+  }
+
   if (options.transport === 'bluetooth') {
     return sendPacketViaBluetooth(options.targetAddress, packet, options.onProgress);
   }

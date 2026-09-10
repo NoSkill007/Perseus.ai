@@ -22,7 +22,7 @@ import {
   getRecentSyncLogs,
   getSyncStats,
 } from '../syncLogService';
-import { processIncomingPacket } from '../syncEngine';
+import { processIncomingPacket, handleIncomingNearbyFile } from '../syncEngine';
 import type { P2PPacket, AssignmentRecord, RescueNode } from '../../types/triageTypes';
 
 // Mock simple de SQLiteDatabase en memoria para pruebas rápidas y determinísticas
@@ -98,6 +98,17 @@ class MockSQLiteDatabase {
       const [status, report_id] = params;
       for (const r of this.tables.reports) {
         if (r.report_id === report_id) r.status = status;
+      }
+      return { changes: 1 };
+    }
+
+    if (s.startsWith('UPDATE reports SET audio_uri = ?') || s.startsWith('UPDATE reports SET image_uri = ?')) {
+      const [uri, updatedAt, report_id] = params;
+      for (const r of this.tables.reports) {
+        if (r.report_id === report_id) {
+          if (s.includes('audio_uri')) r.audio_uri = uri;
+          if (s.includes('image_uri')) r.image_uri = uri;
+        }
       }
       return { changes: 1 };
     }
@@ -320,3 +331,107 @@ describe('Persona C - Asignación de Casos y Resolución de Conflictos', () => {
     expect(beta?.status).toBe('cancelado');
   });
 });
+
+describe('Persona C - Google Nearby Connections (P2P Cluster)', () => {
+  let mockDb: any;
+
+  beforeEach(() => {
+    mockDb = new MockSQLiteDatabase();
+  });
+
+  it('debe registrar y auditar transferencias con transporte nearby', () => {
+    recordSyncLog(mockDb, {
+      reportId: 'rep-nearby-001',
+      nodeId: 'endpoint-alpha-123',
+      syncedAt: Date.now(),
+      direction: 'sent',
+      transport: 'nearby',
+      bytesTransferred: 4096,
+      status: 'exitoso',
+    });
+
+    const logs = getRecentSyncLogs(mockDb, 5);
+    expect(logs.length).toBe(1);
+    expect(logs[0].transport).toBe('nearby');
+    expect(logs[0].nodeId).toBe('endpoint-alpha-123');
+    expect(logs[0].bytesTransferred).toBe(4096);
+  });
+
+  it('debe procesar paquetes entrantes vía transporte nearby y guardar el reporte', () => {
+    const packet: P2PPacket = createPacket(
+      'REPORT_BUNDLE',
+      { id: 'endpoint-rescatista-99', callsign: 'Brigada Rescate Chiriquí' },
+      {
+        reports: [
+          {
+            reportId: 'rep-nearby-emergency-1',
+            createdAt: Date.now(),
+            extractedSummary: 'Derrumbe en vía Boquete con 2 atrapados',
+            triagePriority: 'ROJO',
+            reportedPeopleCount: 2,
+            needs: ['SALUD', 'ACCESO_RESCATE'],
+          },
+        ],
+      }
+    );
+
+    const result = processIncomingPacket(mockDb, packet, 'nearby');
+    expect(result.success).toBe(true);
+    expect(result.processedCount).toBe(1);
+    expect(mockDb.tables.reports.length).toBe(1);
+    expect(mockDb.tables.reports[0].report_id).toBe('rep-nearby-emergency-1');
+
+    const logs = getRecentSyncLogs(mockDb, 5);
+    expect(logs.length).toBe(1);
+    expect(logs[0].transport).toBe('nearby');
+    expect(logs[0].direction).toBe('received');
+  });
+
+  it('debe asociar archivos multimedia recibidos por Nearby al reporte correcto', () => {
+    // 1. Insertar reporte base
+    mockDb.tables.reports.push({
+      report_id: 'rep-multimedia-101',
+      created_at: Date.now(),
+      status: 'recibido',
+      audio_uri: null,
+      image_uri: null,
+    });
+
+    // 2. Procesar audio recibido por Nearby FILE payload
+    const audioRes = handleIncomingNearbyFile(mockDb, {
+      endpointId: 'endpoint-citizen-1',
+      payloadId: '1001',
+      fileUri: 'file:///cache/nearby_files/nearby_1001_voz.m4a',
+      fileName: 'voz.m4a',
+      fileSize: 45000,
+      metadata: JSON.stringify({
+        isNearbyFileMeta: true,
+        reportId: 'rep-multimedia-101',
+        type: 'audio',
+      }),
+    });
+
+    expect(audioRes.success).toBe(true);
+    expect(audioRes.mediaType).toBe('audio');
+    expect(mockDb.tables.reports[0].audio_uri).toBe('file:///cache/nearby_files/nearby_1001_voz.m4a');
+
+    // 3. Procesar foto recibida por Nearby FILE payload
+    const imageRes = handleIncomingNearbyFile(mockDb, {
+      endpointId: 'endpoint-citizen-1',
+      payloadId: '1002',
+      fileUri: 'file:///cache/nearby_files/nearby_1002_herida.jpg',
+      fileName: 'herida.jpg',
+      fileSize: 120000,
+      metadata: JSON.stringify({
+        isNearbyFileMeta: true,
+        reportId: 'rep-multimedia-101',
+        type: 'image',
+      }),
+    });
+
+    expect(imageRes.success).toBe(true);
+    expect(imageRes.mediaType).toBe('image');
+    expect(mockDb.tables.reports[0].image_uri).toBe('file:///cache/nearby_files/nearby_1002_herida.jpg');
+  });
+});
+

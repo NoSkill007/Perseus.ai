@@ -29,6 +29,15 @@ Cuando ocurre un desastre natural (inundaciones en Chiriquí, deslizamientos en 
 
 - **Principio de Cómputo Secuencial:** El dispositivo nunca paraleliza cómputo intensivo de IA con difusión de red; primero procesa secuencialmente modelo por modelo liberando la memoria RAM inmediatamente, y luego transmite los eventos.
 - **Sin Servidor Central:** Cada teléfono móvil mantiene su propia base de datos SQLite y converge eventualmente mediante intercambio de identificadores únicos.
+- **Conexión P2P Real (Google Nearby Connections API):** Emplea `com.google.android.gms:play-services-nearby:18.7.0` con topología `P2P_CLUSTER` para enlaces directos automáticos sobre Wi-Fi Direct y BLE sin requerir emparejamiento manual previo ni routers intermediarios. Soporta payloads mixtos:
+  - `Payload.Type.BYTES`: Paquetes estructurados JSON con triaje START, necesidades Esfera y metadatos clínicos (≤32 KB).
+  - `Payload.Type.FILE`: Transferencia directa de archivos de audio de voz y fotografías de incidentes a alta velocidad.
+
+### Estado de Implementación P2P (Real vs. Simulado)
+- ✅ **100% Real (Nativo):** Descubrimiento simétrico automático, negociación de enlace P2P, transferencias de paquetes BYTES (JSON) y FILE (audio/fotos), acuses de recibo (ACK), persistencia en SQLite y bitácora de auditoría.
+- ✅ **100% Real (Nativo):** Radar de proximidad BLE AirTag pasivo (cálculo de distancia táctica por potencia de antena RSSI).
+- ⚠️ **Trabajo Futuro (Fase 2):** Retransmisión Multi-hop Relay (nodo A ➔ nodo B ➔ nodo C) en topologías extendidas. La versión actual opera mediante cluster mesh de conexiones directas M:N concurrentes.
+- ⚠️ **Trabajo Futuro (iOS):** Equivalente con Apple Multipeer Connectivity framework (Nearby Connections no interopera de forma offline con iOS).
 
 ---
 
@@ -46,11 +55,13 @@ Cuando ocurre un desastre natural (inundaciones en Chiriquí, deslizamientos en 
 En estricto cumplimiento con el **Artículo 11 de las Reglas del Hackathon**, se declara formalmente todo el software preexistente, modelos y librerías utilizadas como base:
 
 - **Pesos de Modelos de IA:**
-  - `Whisper Base Quantized Q8_0` (74M parámetros, formato GGML `.bin`, Licencia MIT, OpenAI / whisper.cpp).
+  - `Whisper Tiny Quantized Q8_0` (39M parámetros, formato GGML `.bin`, Licencia MIT, OpenAI / whisper.cpp).
   - `Llama 3.2 1B Instruct Q4_0` (1.23B parámetros, formato GGUF `.gguf`, Llama 3.2 Community License, Meta AI).
   - `VisionPsy-Nano` (Modelo de visión compacto, formato GGUF, Licencia Apache 2.0, Tether AI Research).
 - **Runtimes y SDKs de Inferencia Local:**
   - `@qvac/sdk` (v0.18.2) y `react-native-bare-kit` (v0.11.5) por Holepunch / Tether.
+- **Comunicaciones P2P Dispositivo-a-Dispositivo:**
+  - `Google Play Services Nearby Connections API` (`com.google.android.gms:play-services-nearby:18.7.0`, Licencia Google Play Services Terms of Service).
 - **Framework y Librerías Base:**
   - `Expo SDK 54` y `React Native 0.81.5` (Plantilla base Expo Router con TypeScript, Licencia MIT).
   - `expo-sqlite` (Motor SQLite local para React Native, Licencia MIT).
@@ -85,10 +96,13 @@ cd "Perseus AI/Perseus.ai"
 # 2. Instalar dependencias
 npm install
 
-# 3. Generar proyecto nativo de Android
+# 3. Descargar modelos de IA on-device (Whisper + VisionPsy-Nano)
+npm run download:models
+
+# 4. Generar proyecto nativo de Android
 npx expo prebuild --platform android
 
-# 4. Compilar y ejecutar en el dispositivo físico conectado
+# 5. Compilar y ejecutar en el dispositivo físico conectado
 npx expo run:android --device
 ```
 

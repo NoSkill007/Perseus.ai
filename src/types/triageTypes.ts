@@ -40,7 +40,7 @@ export interface TriageResult {
   audioUri?: string;
   /** Ruta local o remota a la imagen tomada */
   imageUri?: string;
-  /** Transcripción local generada por WHISPER_BASE_Q8_0 */
+  /** Transcripción local generada por WHISPER_TINY_Q8_0 */
   transcript?: string;
   /** Análisis de severidad visual generado por VISIONPSY_NANO_460M_MULTIMODAL_Q8_0 */
   visionSeverity?: string;
@@ -178,7 +178,7 @@ export interface SyncEvent {
 // PERSONA C: Tipos Oficiales P2P y Mesh
 // ==========================================
 
-export type P2PTransportType = 'wifi_lan' | 'bluetooth' | 'manual';
+export type P2PTransportType = 'wifi_lan' | 'bluetooth' | 'nearby' | 'manual';
 
 export interface RescueNode {
   id: string; // UUID v4

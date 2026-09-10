@@ -19,6 +19,7 @@ import {
   markReportAckReceived,
   reportExists,
   saveReport,
+  attachReportMedia,
 } from './reportService';
 import { upsertRescueNode, getLocalNode } from './nodeService';
 import { recordRemoteAssignment, claimReport } from './assignmentService';
@@ -193,7 +194,7 @@ export async function syncReportsToPeer(
     sentAt: Date.now(),
   });
 
-  onProgress?.(0.2, `Preparando transmisión por ${transport === 'bluetooth' ? 'Bluetooth' : 'Wi-Fi Hotspot'}...`);
+  onProgress?.(0.2, `Preparando transmisión por ${transport === 'bluetooth' ? 'Bluetooth' : transport === 'nearby' ? 'Google Nearby' : 'Wi-Fi Hotspot'}...`);
 
   // 2. Despachar paquete por el transporte seleccionado
   const dispatchRes = await dispatchPacket(packet, {
@@ -449,4 +450,53 @@ export function claimAndBroadcastCase(
   });
 
   return { assignment, packet };
+}
+
+/**
+ * Procesa un archivo multimedia recibido vía Google Nearby Connections y lo asocia al reporte correspondiente
+ */
+export function handleIncomingNearbyFile(
+  db: SQLiteDatabase,
+  fileEvent: {
+    endpointId: string;
+    payloadId: string;
+    fileUri: string;
+    fileName: string;
+    fileSize: number;
+    metadata: string;
+  }
+): { success: boolean; reportId?: string; mediaType?: 'audio' | 'image'; error?: string } {
+  try {
+    let meta: any = {};
+    if (typeof fileEvent.metadata === 'string' && fileEvent.metadata.startsWith('{')) {
+      try {
+        meta = JSON.parse(fileEvent.metadata);
+      } catch {}
+    } else if (typeof fileEvent.metadata === 'object' && fileEvent.metadata !== null) {
+      meta = fileEvent.metadata;
+    }
+
+    const reportId = meta.reportId;
+    const mediaType: 'audio' | 'image' = meta.type === 'image' || fileEvent.fileName?.endsWith('.jpg') || fileEvent.fileName?.endsWith('.jpeg') || fileEvent.fileName?.endsWith('.png')
+      ? 'image'
+      : 'audio';
+
+    if (reportId) {
+      attachReportMedia(db, reportId, fileEvent.fileUri, mediaType);
+      recordSyncLog(db, {
+        reportId,
+        nodeId: fileEvent.endpointId,
+        syncedAt: Date.now(),
+        direction: 'received',
+        transport: 'nearby',
+        bytesTransferred: fileEvent.fileSize || 0,
+        status: 'exitoso',
+      });
+      return { success: true, reportId, mediaType };
+    }
+
+    return { success: false, error: 'Metadata de archivo no contiene reportId' };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Error procesando archivo Nearby recibido' };
+  }
 }
