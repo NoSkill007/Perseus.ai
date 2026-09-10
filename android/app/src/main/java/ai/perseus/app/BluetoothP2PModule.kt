@@ -23,10 +23,19 @@ import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.WritableArray
 import com.facebook.react.bridge.WritableMap
 import com.facebook.react.modules.core.DeviceEventManagerModule
+import android.media.MediaCodec
+import android.media.MediaExtractor
+import android.media.MediaFormat
 import java.io.BufferedReader
+import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.io.PrintWriter
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.util.UUID
 import kotlin.math.pow
 
@@ -645,6 +654,189 @@ class BluetoothP2PModule(private val reactContext: ReactApplicationContext) :
             scanCallback = null
             isScanning = false
         }
+    }
+
+    @ReactMethod
+    fun convertAudioToWav(inputPath: String, outputPath: String, promise: Promise) {
+        Thread {
+            try {
+                val cleanInput = if (inputPath.startsWith("file://")) inputPath.substring(7) else inputPath
+                val cleanOutput = if (outputPath.startsWith("file://")) outputPath.substring(7) else outputPath
+
+                val inputFile = File(cleanInput)
+                if (!inputFile.exists()) {
+                    promise.reject("ERR_FILE_NOT_FOUND", "Archivo no encontrado: $cleanInput")
+                    return@Thread
+                }
+
+                // Si ya es un WAV válido (comprobando cabecera RIFF de 4 bytes)
+                if (cleanInput.endsWith(".wav", ignoreCase = true)) {
+                    val header = ByteArray(4)
+                    FileInputStream(inputFile).use { it.read(header) }
+                    if (String(header) == "RIFF") {
+                        promise.resolve(cleanInput)
+                        return@Thread
+                    }
+                }
+
+                val extractor = MediaExtractor()
+                extractor.setDataSource(cleanInput)
+
+                var trackIndex = -1
+                var format: MediaFormat? = null
+                for (i in 0 until extractor.trackCount) {
+                    val f = extractor.getTrackFormat(i)
+                    val mime = f.getString(MediaFormat.KEY_MIME) ?: ""
+                    if (mime.startsWith("audio/")) {
+                        trackIndex = i
+                        format = f
+                        break
+                    }
+                }
+
+                if (trackIndex < 0 || format == null) {
+                    extractor.release()
+                    promise.reject("ERR_NO_AUDIO_TRACK", "No se encontró pista de audio en $cleanInput")
+                    return@Thread
+                }
+
+                extractor.selectTrack(trackIndex)
+                val mime = format.getString(MediaFormat.KEY_MIME) ?: ""
+                val sampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+                val channelCount = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+
+                val decoder = MediaCodec.createDecoderByType(mime)
+                decoder.configure(format, null, null, 0)
+                decoder.start()
+
+                val targetSampleRate = 16000
+                val outputFile = File(cleanOutput)
+                outputFile.parentFile?.mkdirs()
+                if (outputFile.exists()) {
+                    outputFile.delete()
+                }
+
+                val rawPcmStream = ByteArrayOutputStream()
+                val info = MediaCodec.BufferInfo()
+                var isEOS = false
+                val timeoutUs = 5000L
+
+                while (!Thread.currentThread().isInterrupted) {
+                    if (!isEOS) {
+                        val inIndex = decoder.dequeueInputBuffer(timeoutUs)
+                        if (inIndex >= 0) {
+                            val inBuffer = decoder.getInputBuffer(inIndex)
+                            if (inBuffer != null) {
+                                val sampleSize = extractor.readSampleData(inBuffer, 0)
+                                if (sampleSize < 0) {
+                                    decoder.queueInputBuffer(inIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                                    isEOS = true
+                                } else {
+                                    decoder.queueInputBuffer(inIndex, 0, sampleSize, extractor.sampleTime, 0)
+                                    extractor.advance()
+                                }
+                            }
+                        }
+                    }
+
+                    val outIndex = decoder.dequeueOutputBuffer(info, timeoutUs)
+                    if (outIndex >= 0) {
+                        val outBuffer = decoder.getOutputBuffer(outIndex)
+                        if (outBuffer != null && info.size > 0) {
+                            outBuffer.position(info.offset)
+                            outBuffer.limit(info.offset + info.size)
+                            val chunk = ByteArray(info.size)
+                            outBuffer.get(chunk)
+                            rawPcmStream.write(chunk)
+                        }
+                        decoder.releaseOutputBuffer(outIndex, false)
+                        if ((info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
+                            break
+                        }
+                    } else if (outIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                        // Formato confirmado
+                    } else if (outIndex == MediaCodec.INFO_TRY_AGAIN_LATER && isEOS) {
+                        break
+                    }
+                }
+
+                decoder.stop()
+                decoder.release()
+                extractor.release()
+
+                val rawPcmBytes = rawPcmStream.toByteArray()
+                val shortBuffer = ByteBuffer.wrap(rawPcmBytes).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
+                val totalSamples = shortBuffer.remaining()
+                val monoSamples = ShortArray(totalSamples / channelCount)
+
+                // 1. Convertir a Mono
+                if (channelCount == 1) {
+                    shortBuffer.get(monoSamples)
+                } else {
+                    for (i in monoSamples.indices) {
+                        var sum = 0
+                        for (c in 0 until channelCount) {
+                            if (shortBuffer.hasRemaining()) {
+                                sum += shortBuffer.get().toInt()
+                            }
+                        }
+                        monoSamples[i] = (sum / channelCount).toShort()
+                    }
+                }
+
+                // 2. Resamplear linealmente a 16000 Hz si la tasa difiere
+                val targetMonoSamples: ShortArray
+                if (sampleRate == targetSampleRate) {
+                    targetMonoSamples = monoSamples
+                } else {
+                    val ratio = sampleRate.toDouble() / targetSampleRate.toDouble()
+                    val targetLength = (monoSamples.size / ratio).toInt()
+                    targetMonoSamples = ShortArray(targetLength)
+                    for (i in 0 until targetLength) {
+                        val srcIdx = i * ratio
+                        val indexFloor = srcIdx.toInt().coerceIn(0, monoSamples.size - 1)
+                        val indexCeil = (indexFloor + 1).coerceIn(0, monoSamples.size - 1)
+                        val frac = (srcIdx - indexFloor).toFloat()
+                        val interp = (monoSamples[indexFloor] * (1f - frac) + monoSamples[indexCeil] * frac).toInt()
+                        targetMonoSamples[i] = interp.coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
+                    }
+                }
+
+                // 3. Escribir archivo WAV estándar de 44 bytes RIFF/WAVE
+                val pcmByteCount = targetMonoSamples.size * 2
+                val totalDataLen = pcmByteCount + 36
+                val fos = FileOutputStream(outputFile)
+                val wavHeader = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN)
+
+                wavHeader.put("RIFF".toByteArray(Charsets.US_ASCII))
+                wavHeader.putInt(totalDataLen)
+                wavHeader.put("WAVE".toByteArray(Charsets.US_ASCII))
+                wavHeader.put("fmt ".toByteArray(Charsets.US_ASCII))
+                wavHeader.putInt(16) // Subchunk1Size
+                wavHeader.putShort(1.toShort()) // PCM format
+                wavHeader.putShort(1.toShort()) // Mono (1)
+                wavHeader.putInt(targetSampleRate) // 16000
+                wavHeader.putInt(targetSampleRate * 1 * 2) // ByteRate: 32000
+                wavHeader.putShort(2.toShort()) // BlockAlign
+                wavHeader.putShort(16.toShort()) // BitsPerSample: 16
+                wavHeader.put("data".toByteArray(Charsets.US_ASCII))
+                wavHeader.putInt(pcmByteCount)
+
+                fos.write(wavHeader.array())
+
+                val pcmOutputBuffer = ByteBuffer.allocate(targetMonoSamples.size * 2).order(ByteOrder.LITTLE_ENDIAN)
+                for (sample in targetMonoSamples) {
+                    pcmOutputBuffer.putShort(sample)
+                }
+                fos.write(pcmOutputBuffer.array())
+                fos.flush()
+                fos.close()
+
+                promise.resolve(cleanOutput)
+            } catch (e: Exception) {
+                promise.reject("ERR_CONVERT_WAV", "Fallo en conversión de audio a WAV: ${e.message}", e)
+            }
+        }.start()
     }
 
     private fun sendEvent(eventName: String, params: WritableMap?) {
