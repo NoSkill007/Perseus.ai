@@ -9,7 +9,13 @@ import type {
   P2PTransportType,
   RescueNode,
 } from '../types/triageTypes';
-import { isBluetoothNativeSupported, sendBluetoothPacket } from './bluetoothNative';
+import {
+  isBluetoothNativeSupported,
+  sendBluetoothPacket,
+  getPairedBluetoothDevices,
+  startBleBeacon,
+  stopBleBeacon,
+} from './bluetoothNative';
 
 export const DEFAULT_P2P_PORT = 7890;
 export const DEFAULT_TIMEOUT_MS = 6000;
@@ -93,22 +99,21 @@ export function validatePacket(data: unknown): P2PPacket {
 }
 
 /**
- * Formatea un paquete P2P para transmisión Bluetooth (fragmentación / chunking)
+ * Serializa y fragmenta un paquete para transmisión Bluetooth RFCOMM
  */
 export function formatBluetoothPayload(packet: P2PPacket): {
   raw: string;
-  byteLength: number;
   chunksCount: number;
+  byteLength: number;
 } {
-  const raw = JSON.stringify(packet);
-  const byteLength = new TextEncoder().encode(raw).length;
-  const CHUNK_SIZE = 512; // Tamaño estándar de buffer BLE / RFCOMM
-  const chunksCount = Math.ceil(byteLength / CHUNK_SIZE);
-
+  const json = JSON.stringify(packet);
+  const bytes = new TextEncoder().encode(json).length;
+  // Fragmentación lógica en paquetes de 512 bytes para radios de bajo ancho de banda
+  const chunksCount = Math.ceil(bytes / 512);
   return {
-    raw,
-    byteLength,
-    chunksCount,
+    raw: json,
+    chunksCount: Math.max(chunksCount, 1),
+    byteLength: bytes,
   };
 }
 
@@ -198,10 +203,26 @@ export async function sendPacketViaBluetooth(
   // 1. Si el módulo nativo Android de Bluetooth RFCOMM está presente, transmitir por radio física
   if (isBluetoothNativeSupported()) {
     try {
-      console.log(`[Bluetooth RFCOMM Nativo] Conectando por radio a: ${targetDeviceId}...`);
+      let safeTarget = targetDeviceId?.trim();
+      if (!safeTarget || safeTarget.includes('192.168.') || safeTarget === 'BRIGADA-BT-01') {
+        const paired = await getPairedBluetoothDevices();
+        if (paired.length > 0) {
+          safeTarget = paired[0].address || paired[0].name;
+        }
+      }
+
+      if (!safeTarget) {
+        return {
+          success: false,
+          error: 'Selecciona o empareja un dispositivo Bluetooth receptor.',
+          bytes: byteLength,
+        };
+      }
+
+      console.log(`[Bluetooth RFCOMM Nativo] Conectando por radio a: ${safeTarget}...`);
       if (onProgress) onProgress(0.4);
 
-      const nativeRes = await sendBluetoothPacket(targetDeviceId, raw);
+      const nativeRes = await sendBluetoothPacket(safeTarget, raw);
 
       if (nativeRes.success) {
         if (onProgress) onProgress(1.0);
@@ -305,69 +326,87 @@ export async function sendPacketContinuousBeacon(
 
   console.log(`[P2P Beacon] Iniciando baliza continua SOS (${options.transport})...`);
 
-  while (!options.abortSignal?.aborted) {
-    attempt++;
-    options.callbacks?.onBeaconAttempt?.(
-      attempt,
-      `Emitiendo baliza #${attempt} vía ${options.transport === 'bluetooth' ? 'Bluetooth' : 'Wi-Fi Hotspot'}...`
-    );
-
-    // 1. Despachar intento con timeout corto de ráfaga
-    const result = await dispatchPacket(packet, {
-      transport: options.transport,
-      targetAddress: options.targetAddress,
-      port: options.port || DEFAULT_P2P_PORT,
-      timeoutMs: BEACON_BURST_TIMEOUT_MS,
-    });
-
-    totalBytesTransferred += result.bytes || 0;
-
-    // 2. Si hubo éxito o acuse ACK recibido, terminar con éxito inmediatamente
-    if (result.success || mockReceiverAckRequested) {
-      mockReceiverAckRequested = false;
-      console.log(`[P2P Beacon] ¡Éxito en baliza #${attempt}! ACK confirmado por el receptor.`);
-      return {
-        success: true,
-        response: result.response || {
-          ackPacketId: packet.packetId,
-          receivedAt: Date.now(),
-          status: `received_via_${options.transport}`,
-          nodeId: options.targetAddress,
-        },
-        bytes: totalBytesTransferred,
-        totalAttempts: attempt,
-      };
-    }
-
-    // 3. Verificar si el usuario canceló durante el intento
-    if (options.abortSignal?.aborted) {
-      resetMockReceiverAck();
-      break;
-    }
-
-    // 4. Ciclo de Reposo (Duty Cycling) + Jitter aleatorio para no saturar 2.4 GHz
-    const jitter = Math.floor(Math.random() * (JITTER_MAX_MS - JITTER_MIN_MS + 1)) + JITTER_MIN_MS;
-    const sleepDuration = BEACON_SLEEP_MS + jitter;
-
-    options.callbacks?.onSleepCycle?.(Math.round(sleepDuration / 1000));
-    console.log(`[P2P Beacon] Reposo de ahorro de batería (${sleepDuration}ms) con jitter anti-colisión...`);
-
-    // Esperar en intervalos fraccionados para permitir cancelación instantánea
-    const step = 200;
-    let elapsed = 0;
-    while (elapsed < sleepDuration) {
-      if (options.abortSignal?.aborted) break;
-      await new Promise((r) => setTimeout(r, Math.min(step, sleepDuration - elapsed)));
-      elapsed += step;
-    }
+  // Si es Bluetooth, activar simultáneamente la baliza publicitaria BLE estilo AirTag al éter
+  if (options.transport === 'bluetooth' && isBluetoothNativeSupported()) {
+    try {
+      const firstRep = (packet.payload as any)?.reports?.[0];
+      const prio = firstRep?.triagePriority || 'ROJO';
+      const pCount = firstRep?.reportedPeopleCount || 1;
+      const repId = firstRep?.reportId || packet.packetId || 'SOS';
+      startBleBeacon(prio, pCount, repId).catch((e) => console.warn('[P2P Beacon] Error BLE Beacon:', e));
+    } catch (e) {}
   }
 
-  return {
-    success: false,
-    error: 'Baliza cancelada por el usuario.',
-    bytes: totalBytesTransferred,
-    totalAttempts: attempt,
-  };
+  try {
+    while (!options.abortSignal?.aborted) {
+      attempt++;
+      options.callbacks?.onBeaconAttempt?.(
+        attempt,
+        `Emitiendo baliza #${attempt} vía ${options.transport === 'bluetooth' ? 'Bluetooth' : 'Wi-Fi Hotspot'}...`
+      );
+
+      // 1. Despachar intento con timeout corto de ráfaga
+      const result = await dispatchPacket(packet, {
+        transport: options.transport,
+        targetAddress: options.targetAddress,
+        port: options.port || DEFAULT_P2P_PORT,
+        timeoutMs: BEACON_BURST_TIMEOUT_MS,
+      });
+
+      totalBytesTransferred += result.bytes || 0;
+
+      // 2. Si hubo éxito o acuse ACK recibido, terminar con éxito inmediatamente
+      if (result.success || mockReceiverAckRequested) {
+        mockReceiverAckRequested = false;
+        console.log(`[P2P Beacon] ¡Éxito en baliza #${attempt}! ACK confirmado por el receptor.`);
+        return {
+          success: true,
+          response: result.response || {
+            ackPacketId: packet.packetId,
+            receivedAt: Date.now(),
+            status: `received_via_${options.transport}`,
+            nodeId: options.targetAddress,
+          },
+          bytes: totalBytesTransferred,
+          totalAttempts: attempt,
+        };
+      }
+
+      // 3. Verificar si el usuario canceló durante el intento
+      if (options.abortSignal?.aborted) {
+        resetMockReceiverAck();
+        break;
+      }
+
+      // 4. Ciclo de Reposo (Duty Cycling) + Jitter aleatorio para no saturar 2.4 GHz
+      const jitter = Math.floor(Math.random() * (JITTER_MAX_MS - JITTER_MIN_MS + 1)) + JITTER_MIN_MS;
+      const sleepDuration = BEACON_SLEEP_MS + jitter;
+
+      options.callbacks?.onSleepCycle?.(Math.round(sleepDuration / 1000));
+      console.log(`[P2P Beacon] Reposo de ahorro de batería (${sleepDuration}ms) con jitter anti-colisión...`);
+
+      // Esperar en intervalos fraccionados para permitir cancelación instantánea
+      const step = 200;
+      let elapsed = 0;
+      while (elapsed < sleepDuration) {
+        if (options.abortSignal?.aborted) break;
+        await new Promise((r) => setTimeout(r, Math.min(step, sleepDuration - elapsed)));
+        elapsed += step;
+      }
+    }
+
+    return {
+      success: false,
+      error: 'Baliza cancelada por el usuario.',
+      bytes: totalBytesTransferred,
+      totalAttempts: attempt,
+    };
+  } finally {
+    // Asegurar que la baliza BLE se apaga al salir
+    if (options.transport === 'bluetooth' && isBluetoothNativeSupported()) {
+      stopBleBeacon().catch(() => {});
+    }
+  }
 }
 
 /**

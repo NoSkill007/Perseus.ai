@@ -204,6 +204,19 @@ export default function ReportDetailScreen() {
           })}
         </View>
 
+        {/* Banner de Acuse de Recibo (ACK) Confirmado */}
+        {Boolean(report.ackReceived || report.status === 'enviado' || report.status === 'recibido') && (
+          <View style={styles.ackBannerCard}>
+            <Ionicons name="shield-checkmark" size={20} color="#22C55E" />
+            <View style={{ flex: 1, marginLeft: 8 }}>
+              <Text style={styles.ackBannerTitle}>✅ Acuse de Recibo (ACK) Confirmado</Text>
+              <Text style={styles.ackBannerSubtitle}>
+                Ficha médica entregada y confirmada con la brigada de rescate.
+              </Text>
+            </View>
+          </View>
+        )}
+
         {/* FOTOGRAFÍA DE LA ESCENA / LESIÓN (Para el Rescatista) */}
         {report.imageUri && (
           <View style={styles.card}>
@@ -554,6 +567,26 @@ const styles = StyleSheet.create({
   timelineLineActive: { backgroundColor: '#3B82F6' },
   timelineLabel: { fontSize: 8, color: '#64748B', marginTop: 4, textAlign: 'center' },
   timelineLabelActive: { color: '#94A3B8' },
+  ackBannerCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#064E3B',
+    borderColor: '#059669',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+  },
+  ackBannerTitle: {
+    color: '#ECFDF5',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  ackBannerSubtitle: {
+    color: '#A7F3D0',
+    fontSize: 11,
+    marginTop: 2,
+  },
   card: {
     backgroundColor: '#1E293B',
     borderRadius: 12,

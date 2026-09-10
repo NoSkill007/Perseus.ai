@@ -313,20 +313,30 @@ export function processIncomingPacket(
               continue;
             }
 
-            // Insertar reporte recibido
+            // Insertar reporte recibido preservando todos los datos clínicos y multimedia
             const newRecord: ReportRecord = {
               reportId: rid,
               createdAt: rep.createdAt || now,
               source: 'received',
               status: 'recibido',
-              transcript: rep.rawInputText || rep.transcript || '',
+              transcript: rep.transcript || rep.rawInputText || '',
+              audioUri: rep.audioUri || undefined,
+              imageUri: rep.imageUri || undefined,
+              visionSeverity: rep.visionSeverity || undefined,
+              visualTriageAnalysis: rep.visualTriageAnalysis || undefined,
+              injuriesAndSymptoms: rep.injuriesAndSymptoms || undefined,
               extractedSummary: rep.extractedSummary || 'Reporte de emergencia recibido',
               triagePriority: rep.triagePriority || 'AMARILLO',
               needs: rep.needs || rep.sphereNeeds || ['SALUD'],
               locationReference: rep.locationReference || '',
               reportedPeopleCount: rep.reportedPeopleCount || 1,
               missingFields: rep.missingFields || [],
-              isLocalInference: true,
+              province: rep.province || undefined,
+              district: rep.district || undefined,
+              corregimiento: rep.corregimiento || undefined,
+              reporterProfile: rep.reporterProfile || undefined,
+              rawModelOutput: rep.rawModelOutput || undefined,
+              isLocalInference: rep.isLocalInference ?? true,
               executionTimeMs: rep.executionTimeMs || 0,
               receivedAt: now,
               ackReceived: true,
