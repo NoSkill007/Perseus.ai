@@ -303,18 +303,6 @@ export default function SincronizarScreen() {
     }
   };
 
-  /**
-   * Fija la dirección del dispositivo detectado en el campo de destino RFCOMM
-   */
-  const handleSelectBeaconForRfcomm = (beacon: BleBeaconDetection) => {
-    setPeerAddress(beacon.deviceName || beacon.deviceAddress);
-    setIsBeaconDetailModalOpen(false);
-    Alert.alert(
-      '🎯 Dispositivo Seleccionado',
-      `Se configuró "${beacon.deviceName || beacon.deviceAddress}" como objetivo. Al sincronizar por Bluetooth se conectará directamente a este dispositivo.`
-    );
-  };
-
   const loadData = useCallback(() => {
     try {
       const p = getProfile(db);
@@ -392,10 +380,6 @@ export default function SincronizarScreen() {
       Alert.alert('Sin selección', 'Selecciona al menos un reporte para emitir la baliza SOS.');
       return;
     }
-    if (!peerAddress.trim()) {
-      Alert.alert('Dirección requerida', 'Ingresa la IP del Hotspot o ID Bluetooth del dispositivo receptor.');
-      return;
-    }
 
     if (transport === 'bluetooth') {
       const granted = await requestBluetoothPermissions();
@@ -456,10 +440,14 @@ export default function SincronizarScreen() {
       });
     }
 
+    const targetAddress = transport === 'wifi_lan'
+      ? '192.168.43.1'
+      : (pairedDevices[0]?.address || pairedDevices[0]?.name || 'BRIGADA-BT');
+
     try {
       const result = await syncReportsBeaconLoop(db, {
         reportIds: Array.from(selectedReportIds),
-        targetAddress: peerAddress,
+        targetAddress,
         transport,
         localProfile: profile,
         deviceId,
@@ -517,10 +505,6 @@ export default function SincronizarScreen() {
       Alert.alert('Sin selección', 'Selecciona al menos un reporte para sincronizar.');
       return;
     }
-    if (!peerAddress.trim()) {
-      Alert.alert('Dirección requerida', 'Ingresa la IP del Hotspot o ID Bluetooth del dispositivo receptor.');
-      return;
-    }
 
     if (transport === 'bluetooth') {
       const granted = await requestBluetoothPermissions();
@@ -546,11 +530,14 @@ export default function SincronizarScreen() {
     setSyncStatusMsg('Iniciando handshake...');
 
     const deviceId = profile?.phone || 'node-device-01';
+    const targetAddress = transport === 'wifi_lan'
+      ? '192.168.43.1'
+      : (pairedDevices[0]?.address || pairedDevices[0]?.name || 'BRIGADA-BT');
 
     try {
       const result = await syncReportsToPeer(db, {
         reportIds: Array.from(selectedReportIds),
-        targetAddress: peerAddress,
+        targetAddress,
         transport,
         localProfile: profile,
         deviceId,
@@ -704,6 +691,7 @@ export default function SincronizarScreen() {
         }
       }
     } else {
+      setIsListening(false);
       if (transport === 'bluetooth' && isBluetoothNativeSupported()) {
         await stopBluetoothServer().catch(() => {});
         await stopBleRadar().catch(() => {});
@@ -742,7 +730,15 @@ export default function SincronizarScreen() {
               styles.transportButton,
               transport === 'wifi_lan' && styles.transportButtonActive,
             ]}
-            onPress={() => setTransport('wifi_lan')}
+            onPress={async () => {
+              if (isListening) {
+                setIsListening(false);
+                await stopBluetoothServer().catch(() => {});
+                await stopBleRadar().catch(() => {});
+                await stopHttpServer().catch(() => {});
+              }
+              setTransport('wifi_lan');
+            }}
             activeOpacity={0.8}
           >
             <Ionicons
@@ -766,6 +762,12 @@ export default function SincronizarScreen() {
               transport === 'bluetooth' && styles.transportButtonActive,
             ]}
             onPress={async () => {
+              if (isListening) {
+                setIsListening(false);
+                await stopBluetoothServer().catch(() => {});
+                await stopBleRadar().catch(() => {});
+                await stopHttpServer().catch(() => {});
+              }
               setTransport('bluetooth');
               if (isBluetoothNativeSupported()) {
                 const granted = await requestBluetoothPermissions();
@@ -773,9 +775,6 @@ export default function SincronizarScreen() {
                   try {
                     const devs = await getPairedBluetoothDevices();
                     setPairedDevices(devs);
-                    if (devs.length > 0 && (!peerAddress || peerAddress === '192.168.43.1' || peerAddress === 'BRIGADA-BT-01')) {
-                      setPeerAddress(devs[0].name || devs[0].address);
-                    }
                   } catch (e) {
                     console.warn('[Sincronizar] Error al obtener emparejados:', e);
                   }
@@ -817,100 +816,6 @@ export default function SincronizarScreen() {
             <Text style={styles.statNum}>{stats.totalDuplicates}</Text>
             <Text style={styles.statLabel}>Duplicados</Text>
           </View>
-        </View>
-
-        {/* Configuración de Destino */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>
-            {transport === 'wifi_lan' ? '🌐 Dirección IP del Hotspot' : '🔷 Dispositivo Bluetooth Receptor'}
-          </Text>
-          <Text style={styles.cardDesc}>
-            {transport === 'wifi_lan'
-              ? 'Conéctate al punto de acceso (Hotspot) del rescatista e introduce su IP.'
-              : 'Selecciona o introduce el nombre o dirección MAC del teléfono del rescatista emparejado.'}
-          </Text>
-          <TextInput
-            style={styles.input}
-            value={peerAddress}
-            onChangeText={setPeerAddress}
-            placeholder={transport === 'wifi_lan' ? '192.168.43.1' : 'Nombre o MAC (ej. Galaxy S21 o 00:11:22...)'}
-            placeholderTextColor="#64748B"
-            autoCapitalize="none"
-          />
-
-          {/* Chips de dispositivos emparejados detectados */}
-          {transport === 'bluetooth' && (
-            <View style={{ marginTop: 10 }}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                <Text style={{ fontSize: 12, color: '#94A3B8' }}>
-                  {pairedDevices.length > 0
-                    ? 'Dispositivos Bluetooth emparejados (toca para seleccionar):'
-                    : 'Dispositivos emparejados:'}
-                </Text>
-                <TouchableOpacity
-                  onPress={async () => {
-                    const granted = await requestBluetoothPermissions();
-                    if (granted) {
-                      const devs = await getPairedBluetoothDevices();
-                      setPairedDevices(devs);
-                      if (devs.length > 0 && (!peerAddress || peerAddress === '192.168.43.1' || peerAddress === 'BRIGADA-BT-01')) {
-                        setPeerAddress(devs[0].name || devs[0].address);
-                      }
-                    }
-                  }}
-                  style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 2, paddingHorizontal: 6 }}
-                >
-                  <Ionicons name="refresh" size={13} color="#3B82F6" />
-                  <Text style={{ fontSize: 11, color: '#3B82F6', fontWeight: '600' }}>Actualizar</Text>
-                </TouchableOpacity>
-              </View>
-
-              {pairedDevices.length === 0 ? (
-                <Text style={{ fontSize: 12, color: '#64748B', fontStyle: 'italic' }}>
-                  No se detectaron dispositivos emparejados. Asegúrate de emparejar el teléfono en los Ajustes de Bluetooth de Android.
-                </Text>
-              ) : (
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                  {pairedDevices.map((dev, idx) => {
-                    const isSelected = peerAddress === dev.name || peerAddress === dev.address;
-                    return (
-                      <TouchableOpacity
-                        key={idx}
-                        style={{
-                          backgroundColor: isSelected ? '#2563EB' : '#0F172A',
-                          borderColor: isSelected ? '#60A5FA' : '#334155',
-                          borderWidth: 1,
-                          paddingVertical: 6,
-                          paddingHorizontal: 10,
-                          borderRadius: 8,
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          gap: 6,
-                        }}
-                        onPress={() => setPeerAddress(dev.name || dev.address)}
-                        activeOpacity={0.7}
-                      >
-                        <Ionicons
-                          name="bluetooth"
-                          size={14}
-                          color={isSelected ? '#F8FAFC' : '#3B82F6'}
-                        />
-                        <Text
-                          style={{
-                            color: isSelected ? '#F8FAFC' : '#CBD5E1',
-                            fontSize: 12,
-                            fontWeight: isSelected ? '700' : '500',
-                          }}
-                        >
-                          {dev.name || dev.address}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              )}
-            </View>
-          )}
         </View>
 
         {/* ==================== VISTA RESCATISTA ==================== */}
@@ -1501,17 +1406,6 @@ export default function SincronizarScreen() {
                       <Ionicons name="save" size={20} color="#F8FAFC" />
                       <Text style={modalStyles.actionButtonText}>
                         📥 Guardar Ficha de Triaje en SQLite
-                      </Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={[modalStyles.actionButton, { backgroundColor: '#2563EB' }]}
-                      onPress={() => handleSelectBeaconForRfcomm(selectedBeacon)}
-                      activeOpacity={0.8}
-                    >
-                      <Ionicons name="bluetooth" size={20} color="#F8FAFC" />
-                      <Text style={modalStyles.actionButtonText}>
-                        📡 Fijar como Objetivo de Enlace RFCOMM
                       </Text>
                     </TouchableOpacity>
 
