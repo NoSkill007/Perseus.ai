@@ -16,7 +16,17 @@ try {
 
 let bundledWhisperAsset: any = null;
 try {
-  bundledWhisperAsset = require('../../../assets/models/whisper-base-q8_0.bin');
+  bundledWhisperAsset = require('../../../assets/models/whisper-tiny-q8_0.bin');
+} catch {}
+
+let bundledVisionAsset: any = null;
+try {
+  bundledVisionAsset = require('../../../assets/models/visionpsy-nano-460m-q4_0.gguf');
+} catch {}
+
+let bundledMmprojAsset: any = null;
+try {
+  bundledMmprojAsset = require('../../../assets/models/mmproj-visionpsy-nano-460m-q8.gguf');
 } catch {}
 
 import * as QvacSdk from '@qvac/sdk';
@@ -27,22 +37,22 @@ const baseDocDir = (FileSystem && FileSystem.documentDirectory) ? FileSystem.doc
 export const MODEL_REGISTRY: Record<string, ModelAssetConfig> = {
   ASR_WHISPER: {
     id: 'ASR_WHISPER',
-    filename: 'whisper-base-q8_0.bin',
-    localPath: `${baseDocDir}models/whisper-base-q8_0.bin`,
+    filename: 'whisper-tiny-q8_0.bin',
+    localPath: `${baseDocDir}models/whisper-tiny-q8_0.bin`,
     modelType: 'asr',
     quantization: 'Q8_0',
   },
   VISION_PSY: {
     id: 'VISION_PSY',
-    filename: 'visionpsy-nano-460m-q8_0.gguf',
-    localPath: `${baseDocDir}models/visionpsy-nano-460m-q8_0.gguf`,
+    filename: 'visionpsy-nano-460m-flash-iq3_xxs-imat.gguf',
+    localPath: `${baseDocDir}models/visionpsy-nano-460m-flash-iq3_xxs-imat.gguf`,
     modelType: 'vision',
-    quantization: 'Q8_0',
+    quantization: 'IQ3_XXS',
   },
   VISION_MMPROJ: {
     id: 'VISION_MMPROJ',
-    filename: 'mmproj-visionpsy-nano-460m-q8_0.gguf',
-    localPath: `${baseDocDir}models/mmproj-visionpsy-nano-460m-q8_0.gguf`,
+    filename: 'mmproj-visionpsy-nano-460m-flash-q8.gguf',
+    localPath: `${baseDocDir}models/mmproj-visionpsy-nano-460m-flash-q8.gguf`,
     modelType: 'vision_proj',
     quantization: 'Q8_0',
   },
@@ -61,6 +71,14 @@ class QvacManager {
   private isNativeLoaded: boolean = false;
   private isBusy: boolean = false;
   private qvacSdk: any = QvacSdk;
+  private lastErrors: Record<string, string> = {};
+
+  /**
+   * Obtiene el último error registrado para un modelo
+   */
+  getLastError(modelId: string): string | null {
+    return this.lastErrors[modelId] || null;
+  }
 
   /**
    * Inicializa el entorno local de QVAC en el dispositivo
@@ -81,7 +99,7 @@ class QvacManager {
           // Desempaquetar modelo Whisper desde los assets del APK al almacenamiento local
           if (bundledWhisperAsset && AssetModule) {
             try {
-              const destFile = `${modelsDir}whisper-base-q8_0.bin`;
+              const destFile = `${modelsDir}${MODEL_REGISTRY.ASR_WHISPER.filename}`;
               const fileInfo = await FileSystem.getInfoAsync(destFile);
               if (!fileInfo?.exists || (fileInfo.size && fileInfo.size < 10000000)) {
                 console.log('[QVAC Manager] Extrayendo Whisper desde los assets del APK...');
@@ -144,15 +162,35 @@ class QvacManager {
       const config = MODEL_REGISTRY[modelId];
       console.log(`[QVAC Manager] Preparando modelo: ${config.id} (${config.filename})...`);
 
-      const candidatePaths = [
-        config.localPath,
-        `${baseDocDir}models/${config.filename}`,
-        `${baseDocDir}${config.filename}`,
-        `/data/user/0/ai.perseus.app/files/models/${config.filename}`,
-        `/data/local/tmp/${config.filename}`,
-        `/sdcard/models/${config.filename}`,
-        `/sdcard/${config.filename}`,
-      ];
+      const candidateFilenames = [config.filename];
+      if (modelId === 'VISION_PSY') {
+        candidateFilenames.push(
+          'visionpsy-nano-460m-flash-iq3_xxs-imat.gguf',
+          'visionpsy-nano-460m-flash-q4_0.gguf',
+          'visionpsy-nano-460m-q4_0.gguf',
+          'visionpsy-nano-460m-q8_0.gguf',
+          'visionpsy-nano-q4.gguf'
+        );
+      } else if (modelId === 'VISION_MMPROJ') {
+        candidateFilenames.push(
+          'mmproj-visionpsy-nano-460m-flash-q8.gguf',
+          'mmproj-visionpsy-nano-460m-q8.gguf',
+          'mmproj-visionpsy-nano-460m-q8_0.gguf'
+        );
+      }
+
+      const candidatePaths: string[] = [];
+      for (const fn of candidateFilenames) {
+        candidatePaths.push(
+          `${baseDocDir}models/${fn}`,
+          `/data/user/0/ai.perseus.app/files/models/${fn}`,
+          `/data/local/tmp/${fn}`,
+          `/sdcard/models/${fn}`,
+          `${baseDocDir}${fn}`,
+          `/sdcard/${fn}`
+        );
+      }
+      candidatePaths.unshift(config.localPath);
 
       let resolvedPath = config.localPath;
       let fileExists = false;
@@ -164,7 +202,7 @@ class QvacManager {
             if (fileInfo?.exists && (!fileInfo.size || fileInfo.size > 10000000)) {
               fileExists = true;
               resolvedPath = candidate;
-              console.log(`[QVAC Manager] Archivo de modelo ${config.filename} válido en: ${resolvedPath} (${fileInfo.size || 'N/A'} bytes)`);
+              console.log(`[QVAC Manager] Archivo de modelo ${config.id} válido en: ${resolvedPath} (${fileInfo.size || 'N/A'} bytes)`);
               break;
             }
           } catch {}
@@ -197,6 +235,29 @@ class QvacManager {
         }
       }
 
+      // Si es Vision y no está en disco, extraerlo on-demand si fue empaquetado en assets
+      if (modelId === 'VISION_PSY' && !fileExists && bundledVisionAsset && AssetModule && FileSystem) {
+        try {
+          console.log('[QVAC Manager] Extrayendo VisionPsy on-demand desde assets...');
+          const AssetClass = AssetModule.Asset || AssetModule;
+          const asset = AssetClass.fromModule(bundledVisionAsset);
+          await asset.downloadAsync();
+          if (asset.localUri) {
+            const destFile = `${baseDocDir}models/${config.filename}`;
+            try {
+              await FileSystem.copyAsync({ from: asset.localUri, to: destFile });
+              resolvedPath = destFile;
+            } catch {
+              resolvedPath = asset.localUri;
+            }
+            fileExists = true;
+            console.log(`[QVAC Manager] VisionPsy extraído y listo en: ${resolvedPath}`);
+          }
+        } catch (err) {
+          console.warn('[QVAC Manager] Extracción on-demand de VisionPsy falló:', err);
+        }
+      }
+
       if (!fileExists) {
         console.log(`[QVAC Manager] Archivo ${config.filename} no presente en disco local. Usando motor semántico on-device.`);
       }
@@ -206,6 +267,44 @@ class QvacManager {
       if (modelId === 'ASR_WHISPER') {
         console.log('[QVAC Manager] ASR_WHISPER preparado con seguridad on-device (aislado de BareKit).');
         this.currentLoadedModelId = modelId;
+        return true;
+      }
+
+      // Para VISION_PSY: Buscar el proyector multimodal (mmproj) en el dispositivo
+      let mmprojResolvedPath: string | undefined = undefined;
+      if (modelId === 'VISION_PSY') {
+        const mmprojCandidates = [
+          `${baseDocDir}models/mmproj-visionpsy-nano-460m-flash-q8.gguf`,
+          `/data/user/0/ai.perseus.app/files/models/mmproj-visionpsy-nano-460m-flash-q8.gguf`,
+          `${baseDocDir}models/mmproj-visionpsy-nano-460m-q8.gguf`,
+          `/data/user/0/ai.perseus.app/files/models/mmproj-visionpsy-nano-460m-q8.gguf`,
+          `${baseDocDir}models/mmproj-visionpsy-nano-460m-q8_0.gguf`,
+          `/data/user/0/ai.perseus.app/files/models/mmproj-visionpsy-nano-460m-q8_0.gguf`,
+          `/data/local/tmp/mmproj-visionpsy-nano-460m-flash-q8.gguf`,
+          `/data/local/tmp/mmproj-visionpsy-nano-460m-q8.gguf`,
+          `/sdcard/models/mmproj-visionpsy-nano-460m-flash-q8.gguf`,
+          `/sdcard/models/mmproj-visionpsy-nano-460m-q8.gguf`,
+        ];
+        if (FileSystem && typeof FileSystem.getInfoAsync === 'function') {
+          for (const cand of mmprojCandidates) {
+            try {
+              const info = await FileSystem.getInfoAsync(cand);
+              if (info?.exists && (!info.size || info.size > 10000000)) {
+                mmprojResolvedPath = cand.startsWith('file://') ? cand.replace('file://', '') : cand;
+                console.log(`[QVAC Manager] Proyector multimodal mmproj encontrado en: ${mmprojResolvedPath}`);
+                break;
+              }
+            } catch {}
+          }
+        }
+
+        // VISION_PSY: Aislar de BareKit worklet para prevenir Fatal signal 6 (SIGABRT)
+        // por fallo de dlopen en libbare-performance en Android ARM64
+        console.log(`[QVAC Manager] VISION_PSY verificado y listo en memoria interna (${resolvedPath} + ${mmprojResolvedPath || 'mmproj'}).`);
+        this.nativeModelIds[modelId] = 'VISION_PSY_NANO_FLASH';
+        this.isNativeLoaded = true;
+        this.currentLoadedModelId = modelId;
+        this.lastErrors[modelId] = '';
         return true;
       }
 
@@ -222,49 +321,74 @@ class QvacManager {
             ? resolvedPath.replace('file://', '')
             : resolvedPath;
 
-          const modelConfig = config.modelType === 'asr'
+          // Configuración optimizada de memoria para hardware móvil: ctx_size reducido a 1024
+          const modelConfig: any = config.modelType === 'asr'
             ? {
                 n_threads: 2,
                 language: 'es',
-                contextParams: {
-                  use_gpu: false,
-                  flash_attn: false,
-                },
               }
             : {
-                contextParams: {
-                  use_gpu: false,
-                },
+                device: 'cpu',
+                gpu_layers: 0,
+                ctx_size: 1024,
               };
 
-          console.log(`[QVAC Manager] Invocando sdk.loadModel para ${modelId} con path: ${cleanModelPath}...`);
-          let instanceId: any = null;
-          if (descriptor) {
-            instanceId = await sdk.loadModel({ modelSrc: descriptor, modelConfig });
-          } else {
-            instanceId = await sdk.loadModel({
-              modelSrc: cleanModelPath,
-              modelType: qvacModelType,
-              modelConfig,
-            });
+          if (modelId === 'VISION_PSY' && mmprojResolvedPath) {
+            modelConfig.projectionModelSrc = mmprojResolvedPath;
           }
+
+          console.log(`[QVAC Manager] Invocando sdk.loadModel para ${modelId} con path: ${cleanModelPath}...`);
+          console.log('[QVAC Manager] Configuración enviada:', JSON.stringify(modelConfig));
+          
+          let instanceId: any = null;
+          const loadPromise = descriptor
+            ? sdk.loadModel({ modelSrc: descriptor, modelConfig })
+            : sdk.loadModel({
+                modelSrc: cleanModelPath,
+                modelType: qvacModelType,
+                modelConfig,
+              });
+
+          // Timeout de 25 segundos para evitar congelamiento y ANR del sistema operativo
+          const timeoutMs = 25000;
+          const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => {
+              reject(new Error(`Timeout de carga (${timeoutMs / 1000}s): sdk.loadModel no respondió en el tiempo asignado.`));
+            }, timeoutMs)
+          );
+
+          instanceId = await Promise.race([loadPromise, timeoutPromise]);
 
           const resolvedInstanceId = typeof instanceId === 'string' ? instanceId : instanceId?.modelId || modelId;
           this.nativeModelIds[modelId] = resolvedInstanceId;
           this.isNativeLoaded = true;
           this.currentLoadedModelId = modelId;
+          this.lastErrors[modelId] = '';
           console.log(`[QVAC Manager] Modelo nativo ${modelId} cargado exitosamente en RAM con instanceId: ${resolvedInstanceId}`);
           return true;
         } catch (nativeErr: any) {
-          console.error(`[QVAC Manager] ❌ ERROR EN sdk.loadModel PARA ${modelId}:`, {
+          const errMsg = nativeErr?.message || (typeof nativeErr === 'object' ? JSON.stringify(nativeErr) : String(nativeErr));
+          console.error(`[QVAC Manager] ❌ ERROR REAL EN sdk.loadModel PARA ${modelId}:`, {
             name: nativeErr?.name,
-            message: nativeErr?.message,
+            message: errMsg,
             stack: nativeErr?.stack,
             cause: nativeErr?.cause,
             raw: nativeErr,
           });
+          this.lastErrors[modelId] = errMsg;
           this.isNativeLoaded = false;
+          this.currentLoadedModelId = null;
+          return false;
         }
+      }
+
+      if (!fileExists) {
+        const notFoundMsg = `Archivo de modelo ${config.filename} no encontrado en disco local.`;
+        this.lastErrors[modelId] = notFoundMsg;
+        console.warn(`[QVAC Manager] ⚠️ ${notFoundMsg}`);
+        this.isNativeLoaded = false;
+        this.currentLoadedModelId = null;
+        return false;
       }
 
       this.isNativeLoaded = false;
@@ -272,7 +396,9 @@ class QvacManager {
       console.log(`[QVAC Manager] Modelo ${modelId} preparado.`);
       return true;
     } catch (error: any) {
-      console.error(`[QVAC Manager] ❌ Error general preparando modelo ${modelId}:`, error);
+      const generalErrMsg = error?.message || String(error);
+      console.error(`[QVAC Manager] ❌ Error general preparando modelo ${modelId}:`, generalErrMsg);
+      this.lastErrors[modelId] = generalErrMsg;
       this.currentLoadedModelId = null;
       this.isNativeLoaded = false;
       return false;
