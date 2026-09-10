@@ -21,6 +21,8 @@ export interface TriageInput {
   imageUri?: string;
   /** Relato en texto escrito directamente por la brigada o afectado */
   textRelato?: string;
+  /** Síntomas o heridas específicas ingresadas manualmente */
+  injuriesAndSymptoms?: string;
   /** Provincia o Comarca seleccionada por el operador (ej. 'Chiriquí') */
   province?: string;
   /** Distrito (opcional) */
@@ -34,10 +36,18 @@ export interface TriageInput {
 export interface TriageResult {
   reportId: string;
   createdAt: number;
+  /** Ruta local o remota al archivo de audio */
+  audioUri?: string;
+  /** Ruta local o remota a la imagen tomada */
+  imageUri?: string;
   /** Transcripción local generada por WHISPER_BASE_Q8_0 */
   transcript?: string;
   /** Análisis de severidad visual generado por VISIONPSY_NANO_460M_MULTIMODAL_Q8_0 */
   visionSeverity?: string;
+  /** Desglose descriptivo de la escena o lesión captada en la imagen */
+  visualTriageAnalysis?: string;
+  /** Desglose específico de heridas, lesiones y síntomas detectados */
+  injuriesAndSymptoms?: string;
   /** Resumen conciso de la emergencia generado por LLAMA_3_2_1B_INST_Q4_0 */
   extractedSummary: string;
   /** Prioridad START (Enum forzado: ROJO, AMARILLO, VERDE, NEGRO) */
@@ -119,9 +129,15 @@ export interface ReportRecord {
   source: ReportSource;
   status: ReportStatus;
 
-  // Datos de TriageResult
+  // Multimedia
+  audioUri?: string;
+  imageUri?: string;
+
+  // Datos de TriageResult y Clínicos
   transcript?: string;
   visionSeverity?: string;
+  visualTriageAnalysis?: string;
+  injuriesAndSymptoms?: string;
   extractedSummary: string;
   triagePriority: StartPriority;
   needs: DisasterNeedCategory[];

@@ -202,6 +202,94 @@ export async function sendPacketViaBluetooth(
   }
 }
 
+// Constantes de Duty Cycling para ahorro de batería y anticolisión
+export const BEACON_BURST_TIMEOUT_MS = 2500; // Intento activo de conexión
+export const BEACON_SLEEP_MS = 3500; // Reposo para ahorrar batería (~70% ahorro)
+export const JITTER_MIN_MS = 400; // Retraso aleatorio mínimo anti-colisión
+export const JITTER_MAX_MS = 1200; // Retraso aleatorio máximo anti-colisión
+
+export interface BeaconCallbackEvents {
+  onBeaconAttempt?: (attemptCount: number, message: string) => void;
+  onSleepCycle?: (sleepingSeconds: number) => void;
+}
+
+/**
+ * Emite una baliza continua con Duty-Cycling y Jitter aleatorio anti-colisión
+ * Continúa enviando hasta que recibe un ACK verificado o se aborta manualmente.
+ */
+export async function sendPacketContinuousBeacon(
+  packet: P2PPacket,
+  options: {
+    transport: P2PTransportType;
+    targetAddress: string;
+    port?: number;
+    abortSignal?: { aborted: boolean };
+    callbacks?: BeaconCallbackEvents;
+  }
+): Promise<{ success: boolean; response?: any; error?: string; bytes: number; totalAttempts: number }> {
+  let attempt = 0;
+  let totalBytesTransferred = 0;
+
+  console.log(`[P2P Beacon] Iniciando baliza continua SOS (${options.transport})...`);
+
+  while (!options.abortSignal?.aborted) {
+    attempt++;
+    options.callbacks?.onBeaconAttempt?.(
+      attempt,
+      `Emitiendo baliza #${attempt} vía ${options.transport === 'bluetooth' ? 'Bluetooth' : 'Wi-Fi Hotspot'}...`
+    );
+
+    // 1. Despachar intento con timeout corto de ráfaga
+    const result = await dispatchPacket(packet, {
+      transport: options.transport,
+      targetAddress: options.targetAddress,
+      port: options.port || DEFAULT_P2P_PORT,
+      timeoutMs: BEACON_BURST_TIMEOUT_MS,
+    });
+
+    totalBytesTransferred += result.bytes || 0;
+
+    // 2. Si hubo éxito o acuse ACK recibido, terminar con éxito inmediatamente
+    if (result.success) {
+      console.log(`[P2P Beacon] ¡Éxito en baliza #${attempt}! ACK confirmado por el receptor.`);
+      return {
+        success: true,
+        response: result.response,
+        bytes: totalBytesTransferred,
+        totalAttempts: attempt,
+      };
+    }
+
+    // 3. Verificar si el usuario canceló durante el intento
+    if (options.abortSignal?.aborted) {
+      break;
+    }
+
+    // 4. Ciclo de Reposo (Duty Cycling) + Jitter aleatorio para no saturar 2.4 GHz
+    const jitter = Math.floor(Math.random() * (JITTER_MAX_MS - JITTER_MIN_MS + 1)) + JITTER_MIN_MS;
+    const sleepDuration = BEACON_SLEEP_MS + jitter;
+
+    options.callbacks?.onSleepCycle?.(Math.round(sleepDuration / 1000));
+    console.log(`[P2P Beacon] Reposo de ahorro de batería (${sleepDuration}ms) con jitter anti-colisión...`);
+
+    // Esperar en intervalos fraccionados para permitir cancelación instantánea
+    const step = 200;
+    let elapsed = 0;
+    while (elapsed < sleepDuration) {
+      if (options.abortSignal?.aborted) break;
+      await new Promise((r) => setTimeout(r, Math.min(step, sleepDuration - elapsed)));
+      elapsed += step;
+    }
+  }
+
+  return {
+    success: false,
+    error: 'Baliza cancelada por el usuario.',
+    bytes: totalBytesTransferred,
+    totalAttempts: attempt,
+  };
+}
+
 /**
  * Despachador unificado de paquetes P2P según el modo de transporte
  */

@@ -7,6 +7,8 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
+  Image,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
@@ -49,6 +51,7 @@ export default function ReportDetailScreen() {
   const [report, setReport] = useState<ReportRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [showAudit, setShowAudit] = useState(false);
+  const [isImageModalVisible, setIsImageModalVisible] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -148,11 +151,74 @@ export default function ReportDetailScreen() {
           })}
         </View>
 
+        {/* FOTOGRAFÍA DE LA ESCENA / LESIÓN (Para el Rescatista) */}
+        {report.imageUri && (
+          <View style={styles.card}>
+            <View style={styles.cardHeaderRow}>
+              <Ionicons name="camera" size={20} color="#3B82F6" />
+              <Text style={styles.cardTitleInline}>Foto de la Escena / Lesión</Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => setIsImageModalVisible(true)}
+              activeOpacity={0.9}
+              style={styles.imageTouchable}
+            >
+              <Image
+                source={{ uri: report.imageUri }}
+                style={styles.sceneImage}
+                resizeMode="cover"
+              />
+              <View style={styles.imageOverlayBadge}>
+                <Ionicons name="scan-outline" size={14} color="#F8FAFC" />
+                <Text style={styles.imageOverlayText}>Tocar para ampliar</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* Resumen */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>📝 Resumen</Text>
           <Text style={styles.cardContent}>{report.extractedSummary}</Text>
         </View>
+
+        {/* HERIDAS Y SÍNTOMAS (Evaluación Prehospitalaria para Rescatistas) */}
+        <View style={[styles.card, { borderColor: '#7F1D1D', borderWidth: 1 }]}>
+          <View style={styles.cardHeaderRow}>
+            <Ionicons name="medkit" size={20} color="#EF4444" />
+            <Text style={[styles.cardTitleInline, { color: '#FCA5A5' }]}>
+              Heridas y Síntomas Detectados
+            </Text>
+          </View>
+          <Text style={[styles.cardContent, { color: '#F8FAFC', fontWeight: '600' }]}>
+            {report.injuriesAndSymptoms || 'No se detallaron heridas específicas en el reporte inicial.'}
+          </Text>
+
+          {/* Recomendación Operativa para Brigada */}
+          {(report.triagePriority === 'ROJO' || report.triagePriority === 'AMARILLO') && (
+            <View style={styles.medicalAlertBox}>
+              <Ionicons name="alert-circle" size={18} color="#EF4444" />
+              <Text style={styles.medicalAlertText}>
+                {report.triagePriority === 'ROJO'
+                  ? '⚠️ Requiere soporte vital inmediato, equipo de inmovilización y evacuación prioritaria.'
+                  : '⚠️ Preparar botiquín de trauma, férulas y evaluación de signos vitales.'}
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {/* ANÁLISIS VISUAL DE LA ESCENA (VisionPsy Nano Local) */}
+        {(report.visualTriageAnalysis || report.visionSeverity) && (
+          <View style={styles.card}>
+            <View style={styles.cardHeaderRow}>
+              <Ionicons name="eye" size={20} color="#3B82F6" />
+              <Text style={styles.cardTitleInline}>Análisis Visual de Severidad (IA)</Text>
+            </View>
+            <Text style={styles.cardContent}>
+              {report.visualTriageAnalysis || report.visionSeverity}
+            </Text>
+          </View>
+        )}
 
         {/* Datos principales */}
         <View style={styles.card}>
@@ -330,6 +396,31 @@ export default function ReportDetailScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      {/* Modal de Imagen en Pantalla Completa */}
+      {report.imageUri && (
+        <Modal
+          visible={isImageModalVisible}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setIsImageModalVisible(false)}
+        >
+          <View style={styles.fullscreenModalBackdrop}>
+            <TouchableOpacity
+              style={styles.closeModalButton}
+              onPress={() => setIsImageModalVisible(false)}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+              <Ionicons name="close" size={26} color="#F8FAFC" />
+            </TouchableOpacity>
+            <Image
+              source={{ uri: report.imageUri }}
+              style={styles.fullscreenImage}
+              resizeMode="contain"
+            />
+          </View>
+        </Modal>
+      )}
     </SafeAreaView>
   );
 }
@@ -387,6 +478,83 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   cardTitle: { fontSize: 15, fontWeight: '700', color: '#F8FAFC', marginBottom: 10 },
+  cardHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
+  },
+  cardTitleInline: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#F8FAFC',
+  },
+  imageTouchable: {
+    borderRadius: 12,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  sceneImage: {
+    width: '100%',
+    height: 220,
+    borderRadius: 12,
+    backgroundColor: '#0F172A',
+  },
+  imageOverlayBadge: {
+    position: 'absolute',
+    bottom: 8,
+    right: 8,
+    backgroundColor: 'rgba(15, 23, 42, 0.85)',
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  imageOverlayText: {
+    color: '#F8FAFC',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  medicalAlertBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderLeftWidth: 3,
+    borderLeftColor: '#EF4444',
+    padding: 10,
+    borderRadius: 6,
+    marginTop: 12,
+  },
+  medicalAlertText: {
+    color: '#FCA5A5',
+    fontSize: 12,
+    lineHeight: 18,
+    flex: 1,
+    fontWeight: '600',
+  },
+  fullscreenModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.95)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
+  },
+  closeModalButton: {
+    position: 'absolute',
+    top: 48,
+    right: 20,
+    zIndex: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 20,
+    padding: 6,
+  },
+  fullscreenImage: {
+    width: '100%',
+    height: '80%',
+  },
   cardContent: { fontSize: 14, color: '#F8FAFC', lineHeight: 22 },
   dataRow: {
     flexDirection: 'row',

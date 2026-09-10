@@ -13,6 +13,7 @@ import {
   Platform,
   StyleProp,
   ViewStyle,
+  Image,
 } from 'react-native';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -73,6 +74,8 @@ export default function HumanReviewScreen() {
   const [needs, setNeeds] = useState<DisasterNeedCategory[]>([]);
   const [peopleCount, setPeopleCount] = useState<number>(0);
   const [location, setLocation] = useState<string>('');
+  const [injuries, setInjuries] = useState<string>('');
+  const [visionAnalysis, setVisionAnalysis] = useState<string>('');
 
   // Sección de auditoría colapsable (colapsada por defecto)
   const [isAuditExpanded, setIsAuditExpanded] = useState<boolean>(false);
@@ -99,6 +102,8 @@ export default function HumanReviewScreen() {
         setNeeds(foundReport.needs || []);
         setPeopleCount(foundReport.reportedPeopleCount ?? 0);
         setLocation(foundReport.locationReference || '');
+        setInjuries(foundReport.injuriesAndSymptoms || '');
+        setVisionAnalysis(foundReport.visualTriageAnalysis || foundReport.visionSeverity || '');
         console.log(`[ReviewScreen] Reporte ${reportId} cargado exitosamente.`);
       }
     } catch (error) {
@@ -139,6 +144,8 @@ export default function HumanReviewScreen() {
         needs,
         reportedPeopleCount: peopleCount,
         locationReference: location.trim(),
+        injuriesAndSymptoms: injuries.trim(),
+        visualTriageAnalysis: visionAnalysis.trim(),
         status: 'confirmado',
       });
       router.replace('/(tabs)');
@@ -158,6 +165,8 @@ export default function HumanReviewScreen() {
         needs,
         reportedPeopleCount: peopleCount,
         locationReference: location.trim(),
+        injuriesAndSymptoms: injuries.trim(),
+        visualTriageAnalysis: visionAnalysis.trim(),
         status: 'confirmado',
       });
       router.push('/(tabs)/sincronizar');
@@ -253,6 +262,21 @@ export default function HumanReviewScreen() {
           </View>
         </View>
 
+        {/* Foto de la Escena / Lesión */}
+        {report.imageUri && (
+          <View style={styles.card}>
+            <View style={styles.cardHeaderRow}>
+              <Ionicons name="camera" size={20} color="#3B82F6" style={styles.cardHeaderIcon} />
+              <Text style={styles.cardTitle}>Fotografía de la Escena / Lesión</Text>
+            </View>
+            <Image
+              source={{ uri: report.imageUri }}
+              style={{ width: '100%', height: 200, borderRadius: 10, backgroundColor: '#0F172A', marginTop: 6 }}
+              resizeMode="cover"
+            />
+          </View>
+        )}
+
         {/* 1. Resumen */}
         <View style={styles.card}>
           <View style={styles.cardHeaderRow}>
@@ -269,6 +293,26 @@ export default function HumanReviewScreen() {
             value={summary}
             onChangeText={setSummary}
             placeholder="Escriba o ajuste el resumen de la emergencia..."
+            placeholderTextColor="#64748B"
+          />
+        </View>
+
+        {/* Heridas y Síntomas Detectados */}
+        <View style={styles.card}>
+          <View style={styles.cardHeaderRow}>
+            <Ionicons name="medkit-outline" size={20} color="#EF4444" style={styles.cardHeaderIcon} />
+            <Text style={styles.cardTitle}>Evaluación de Heridas y Síntomas</Text>
+          </View>
+          <Text style={styles.fieldDescription}>
+            Detalle de fracturas, hemorragias, estado de conciencia o lesiones reportadas para la brigada:
+          </Text>
+          <TextInput
+            style={[styles.textArea, { minHeight: 70 }]}
+            multiline
+            numberOfLines={3}
+            value={injuries}
+            onChangeText={setInjuries}
+            placeholder="Detalle de heridas, síntomas y condición de los lesionados..."
             placeholderTextColor="#64748B"
           />
         </View>

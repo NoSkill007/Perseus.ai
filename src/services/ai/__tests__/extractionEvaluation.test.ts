@@ -100,6 +100,22 @@ describe('Persona D - QA Evaluation Suite (30 Escenarios Sintéticos de Panamá)
     }
   });
 
+  it('debe extraer y estructurar adecuadamente el campo de heridas, síntomas y análisis visual', async () => {
+    const result = await extractTriageWithLLM({
+      relatoText: 'Colapso de vivienda en Boquete',
+      manualInjuries: 'Persona con fractura expuesta en fémur y hemorragia',
+      visionText: 'Paredes colapsadas, escombros pesados y paciente visible bajo losa',
+      province: 'Chiriquí',
+    });
+
+    expect(result.triagePriority).toBe('ROJO');
+    expect(result.injuriesAndSymptoms).toContain('fractura');
+    expect(result.injuriesAndSymptoms).toContain('hemorragia');
+    expect(result.visualTriageAnalysis).toContain('Paredes colapsadas');
+    expect(result.needs).toContain('SALUD');
+    expect(result.needs).toContain('ACCESO_RESCATE');
+  });
+
   it('debe preservar negaciones sin clasificar falsos heridos graves', async () => {
     const negationCases = syntheticCases.filter((c) => c.category === 'negacion_complejo');
     expect(negationCases.length).toBe(7);

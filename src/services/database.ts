@@ -62,8 +62,12 @@ export async function initializeDatabase(db: SQLite.SQLiteDatabase): Promise<voi
       created_at INTEGER NOT NULL,
       source TEXT NOT NULL DEFAULT 'local',
       status TEXT NOT NULL DEFAULT 'borrador',
+      audio_uri TEXT,
+      image_uri TEXT,
       transcript TEXT,
       vision_severity TEXT,
+      visual_triage_analysis TEXT,
+      injuries_and_symptoms TEXT,
       extracted_summary TEXT NOT NULL,
       triage_priority TEXT NOT NULL,
       needs TEXT,
@@ -84,6 +88,28 @@ export async function initializeDatabase(db: SQLite.SQLiteDatabase): Promise<voi
       updated_at INTEGER NOT NULL
     );
   `);
+
+  // Migraciones no destructivas para bases de datos existentes
+  try {
+    await db.execAsync(`
+      ALTER TABLE reports ADD COLUMN audio_uri TEXT;
+    `);
+  } catch {}
+  try {
+    await db.execAsync(`
+      ALTER TABLE reports ADD COLUMN image_uri TEXT;
+    `);
+  } catch {}
+  try {
+    await db.execAsync(`
+      ALTER TABLE reports ADD COLUMN visual_triage_analysis TEXT;
+    `);
+  } catch {}
+  try {
+    await db.execAsync(`
+      ALTER TABLE reports ADD COLUMN injuries_and_symptoms TEXT;
+    `);
+  } catch {}
 
   // 3. Nodos Rescatistas (rescue_nodes)
   await db.execAsync(`

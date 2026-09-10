@@ -23,14 +23,127 @@ import {
 import { upsertRescueNode, getLocalNode } from './nodeService';
 import { recordRemoteAssignment, claimReport } from './assignmentService';
 import { recordSyncLog } from './syncLogService';
-import { createPacket, validatePacket, dispatchPacket } from './p2pTransport';
+import {
+  createPacket,
+  validatePacket,
+  dispatchPacket,
+  sendPacketContinuousBeacon,
+  BeaconCallbackEvents,
+} from './p2pTransport';
 
 export interface SyncResult {
   success: boolean;
   reportsSent: number;
   bytesTransferred: number;
   transport: P2PTransportType;
+  totalAttempts?: number;
   error?: string;
+}
+
+export interface BeaconSyncOptions {
+  reportIds: string[];
+  targetAddress: string;
+  transport: P2PTransportType;
+  localProfile: UserProfile | null;
+  deviceId: string;
+  abortSignal?: { aborted: boolean };
+  onStatusUpdate?: (message: string, isSleeping?: boolean, attemptCount?: number) => void;
+}
+
+/**
+ * Emite una baliza continua SOS para sincronizar reportes hasta que un rescatista responda con ACK
+ * o el usuario detenga manualmente la baliza. Aplica Duty-Cycling y Jitter.
+ */
+export async function syncReportsBeaconLoop(
+  db: SQLiteDatabase,
+  options: BeaconSyncOptions
+): Promise<SyncResult> {
+  const { reportIds, targetAddress, transport, localProfile, deviceId, abortSignal, onStatusUpdate } = options;
+
+  if (reportIds.length === 0) {
+    return { success: false, reportsSent: 0, bytesTransferred: 0, transport, error: 'No hay reportes seleccionados' };
+  }
+
+  const senderNode = {
+    id: deviceId,
+    callsign: localProfile?.fullName || `Nodo-${deviceId.slice(0, 4)}`,
+  };
+
+  const reportsPayload: any[] = [];
+  for (const rid of reportIds) {
+    const r = getReportById(db, rid);
+    if (r) {
+      reportsPayload.push({
+        ...r,
+        reporterProfile: localProfile,
+      });
+    }
+  }
+
+  if (reportsPayload.length === 0) {
+    return { success: false, reportsSent: 0, bytesTransferred: 0, transport, error: 'No se encontraron los reportes en la base de datos' };
+  }
+
+  const packet = createPacket('REPORT_BUNDLE', senderNode, {
+    reports: reportsPayload,
+    sentAt: Date.now(),
+  });
+
+  const callbacks: BeaconCallbackEvents = {
+    onBeaconAttempt: (attemptCount, msg) => {
+      onStatusUpdate?.(msg, false, attemptCount);
+    },
+    onSleepCycle: (sleepingSeconds) => {
+      onStatusUpdate?.(`Ahorro de batería activo. Próxima baliza en ${sleepingSeconds}s...`, true);
+    },
+  };
+
+  const beaconRes = await sendPacketContinuousBeacon(packet, {
+    transport,
+    targetAddress,
+    abortSignal,
+    callbacks,
+  });
+
+  const now = Date.now();
+
+  if (!beaconRes.success) {
+    // Si fue cancelado por el usuario
+    return {
+      success: false,
+      reportsSent: 0,
+      bytesTransferred: beaconRes.bytes,
+      transport,
+      totalAttempts: beaconRes.totalAttempts,
+      error: beaconRes.error || 'Baliza SOS detenida',
+    };
+  }
+
+  // Éxito confirmado por el receptor -> Marcar ACK y bitácora
+  onStatusUpdate?.('¡ACK recibido de rescatista! Registrando entrega en SQLite...', false, beaconRes.totalAttempts);
+  for (const r of reportsPayload) {
+    const syncEventId = `sync-beacon-${now}-${r.reportId.slice(0, 8)}`;
+    markReportSent(db, r.reportId, syncEventId);
+    markReportAckReceived(db, r.reportId);
+
+    recordSyncLog(db, {
+      reportId: r.reportId,
+      nodeId: targetAddress,
+      syncedAt: now,
+      direction: 'sent',
+      transport,
+      bytesTransferred: Math.round(beaconRes.bytes / reportsPayload.length),
+      status: 'exitoso',
+    });
+  }
+
+  return {
+    success: true,
+    reportsSent: reportsPayload.length,
+    bytesTransferred: beaconRes.bytes,
+    transport,
+    totalAttempts: beaconRes.totalAttempts,
+  };
 }
 
 /**

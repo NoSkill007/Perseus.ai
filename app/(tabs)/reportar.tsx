@@ -69,6 +69,7 @@ export default function ReportarScreen() {
 
   // Estados del formulario
   const [textRelato, setTextRelato] = useState('');
+  const [injuriesAndSymptoms, setInjuriesAndSymptoms] = useState('');
   const [province, setProvince] = useState(PROVINCIAS[0]);
   const [district, setDistrict] = useState('');
   const [corregimiento, setCorregimiento] = useState('');
@@ -356,6 +357,7 @@ export default function ReportarScreen() {
       // 3. Ejecutar Pipeline de IA secuencial local
       const input: TriageInput = {
         textRelato: hasText ? textRelato.trim() : undefined,
+        injuriesAndSymptoms: injuriesAndSymptoms.trim() || undefined,
         audioUri: hasAudio ? audioUri.trim() : undefined,
         imageUri: hasImage ? imageUri.trim() : undefined,
         province,
@@ -386,6 +388,7 @@ export default function ReportarScreen() {
 
       // 6. Limpiar formulario
       setTextRelato('');
+      setInjuriesAndSymptoms('');
       setAudioUri('');
       setAudioDuration(null);
       setImageUri('');
@@ -453,11 +456,73 @@ export default function ReportarScreen() {
           />
         </View>
 
-        {/* Sección 2: Audio (Nota de Voz) */}
+        {/* Sección 2: Heridas y Síntomas Observados */}
+        <View style={styles.card}>
+          <View style={styles.sectionHeaderRow}>
+            <Ionicons name="medkit-outline" size={20} color="#EF4444" />
+            <Text style={styles.sectionTitle}>2. Heridas y Síntomas (Opcional)</Text>
+          </View>
+          <Text style={styles.sectionSubtitle}>
+            Indica si hay sangrado, fracturas, personas atrapadas o inconscientes para alertar al rescatista.
+          </Text>
+
+          {/* Chips de Selección Rápida */}
+          <View style={styles.symptomsChipsRow}>
+            {[
+              'Posible fractura',
+              'Hemorragia activa',
+              'Persona inconsciente',
+              'Dificultad respiratoria',
+              'Quemadura',
+              'Atrapado bajo escombros',
+              'Sin heridas visibles',
+            ].map((chip) => {
+              const isSelected = injuriesAndSymptoms.includes(chip);
+              return (
+                <TouchableOpacity
+                  key={chip}
+                  style={[styles.symptomChip, isSelected && styles.symptomChipActive]}
+                  onPress={() => {
+                    if (isSelected) {
+                      const updated = injuriesAndSymptoms
+                        .replace(new RegExp(`(^|,\\s*)${chip}`, 'g'), '')
+                        .replace(/^,\s*/, '')
+                        .trim();
+                      setInjuriesAndSymptoms(updated);
+                    } else {
+                      const updated = injuriesAndSymptoms.trim()
+                        ? `${injuriesAndSymptoms.trim()}, ${chip}`
+                        : chip;
+                      setInjuriesAndSymptoms(updated);
+                    }
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.symptomChipText, isSelected && styles.symptomChipTextActive]}>
+                    {isSelected ? `✓ ${chip}` : `+ ${chip}`}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <TextInput
+            style={[styles.textArea, { minHeight: 70, marginTop: 8 }]}
+            placeholder="Ej: Golpe fuerte en la cabeza, dolor agudo en el pecho, pierna inmovilizada..."
+            placeholderTextColor="#64748B"
+            multiline
+            numberOfLines={3}
+            value={injuriesAndSymptoms}
+            onChangeText={setInjuriesAndSymptoms}
+            textAlignVertical="top"
+          />
+        </View>
+
+        {/* Sección 3: Audio (Nota de Voz) */}
         <View style={styles.card}>
           <View style={styles.sectionHeaderRow}>
             <Ionicons name="mic-outline" size={20} color="#3B82F6" />
-            <Text style={styles.sectionTitle}>2. Nota de Voz / Audio</Text>
+            <Text style={styles.sectionTitle}>3. Nota de Voz / Audio</Text>
           </View>
 
           <View style={styles.audioActionRow}>
@@ -523,11 +588,11 @@ export default function ReportarScreen() {
           )}
         </View>
 
-        {/* Sección 3: Fotografía de la Escena */}
+        {/* Sección 4: Fotografía de la Escena */}
         <View style={styles.card}>
           <View style={styles.sectionHeaderRow}>
             <Ionicons name="camera-outline" size={20} color="#3B82F6" />
-            <Text style={styles.sectionTitle}>3. Foto de la Escena</Text>
+            <Text style={styles.sectionTitle}>4. Foto de la Escena / Lesión</Text>
           </View>
 
           <View style={styles.photoActionRow}>
@@ -565,11 +630,11 @@ export default function ReportarScreen() {
           )}
         </View>
 
-        {/* Sección 4: Ubicación en Panamá */}
+        {/* Sección 5: Ubicación en Panamá */}
         <View style={styles.card}>
           <View style={styles.sectionHeaderRow}>
             <Ionicons name="location-outline" size={20} color="#3B82F6" />
-            <Text style={styles.sectionTitle}>4. Ubicación</Text>
+            <Text style={styles.sectionTitle}>5. Ubicación</Text>
           </View>
 
           {/* Botón interactivo para alternar dirección guardada (Estilo Cámara / Audio) */}
@@ -646,11 +711,11 @@ export default function ReportarScreen() {
           </View>
         </View>
 
-        {/* Sección 5: Personas Afectadas */}
+        {/* Sección 6: Personas Afectadas */}
         <View style={styles.card}>
           <View style={styles.sectionHeaderRow}>
             <Ionicons name="people-outline" size={20} color="#3B82F6" />
-            <Text style={styles.sectionTitle}>5. Personas Afectadas</Text>
+            <Text style={styles.sectionTitle}>6. Personas Afectadas</Text>
           </View>
 
           <View style={styles.stepperContainer}>
@@ -1094,6 +1159,40 @@ const styles = StyleSheet.create({
     fontSize: 14,
     borderWidth: 1,
     borderColor: '#334155',
+  },
+  sectionSubtitle: {
+    fontSize: 12,
+    color: '#94A3B8',
+    marginBottom: 10,
+    marginTop: -2,
+    lineHeight: 17,
+  },
+  symptomsChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 8,
+  },
+  symptomChip: {
+    backgroundColor: '#0F172A',
+    borderColor: '#334155',
+    borderWidth: 1,
+    borderRadius: 20,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  symptomChipActive: {
+    backgroundColor: '#7F1D1D',
+    borderColor: '#EF4444',
+  },
+  symptomChipText: {
+    fontSize: 12,
+    color: '#94A3B8',
+    fontWeight: '600',
+  },
+  symptomChipTextActive: {
+    color: '#F8FAFC',
+    fontWeight: '700',
   },
   stepperContainer: {
     flexDirection: 'row',

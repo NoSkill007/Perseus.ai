@@ -19,8 +19,12 @@ interface ReportRow {
   created_at: number;
   source: string;
   status: string;
+  audio_uri: string | null;
+  image_uri: string | null;
   transcript: string | null;
   vision_severity: string | null;
+  visual_triage_analysis: string | null;
+  injuries_and_symptoms: string | null;
   extracted_summary: string;
   triage_priority: string;
   needs: string | null;
@@ -47,8 +51,12 @@ function rowToReport(row: ReportRow): ReportRecord {
     createdAt: row.created_at,
     source: (row.source as ReportSource) || 'local',
     status: (row.status as ReportStatus) || 'borrador',
+    audioUri: row.audio_uri || undefined,
+    imageUri: row.image_uri || undefined,
     transcript: row.transcript || undefined,
     visionSeverity: row.vision_severity || undefined,
+    visualTriageAnalysis: row.visual_triage_analysis || undefined,
+    injuriesAndSymptoms: row.injuries_and_symptoms || undefined,
     extractedSummary: row.extracted_summary || '',
     triagePriority: (row.triage_priority as StartPriority) || 'AMARILLO',
     needs: row.needs ? JSON.parse(row.needs) : [],
@@ -82,20 +90,26 @@ export function saveReport(
   db.runSync(
     `INSERT OR REPLACE INTO reports (
       report_id, created_at, source, status,
-      transcript, vision_severity, extracted_summary, triage_priority,
+      audio_uri, image_uri,
+      transcript, vision_severity, visual_triage_analysis, injuries_and_symptoms,
+      extracted_summary, triage_priority,
       needs, reported_people_count, location_reference, missing_fields,
       raw_model_output, is_local_inference, execution_time_ms,
       province, district, corregimiento,
       reporter_profile, sync_event_id, sent_at, received_at, ack_received,
       updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       report.reportId || '',
       report.createdAt || now,
       report.source || 'local',
       report.status || 'borrador',
+      report.audioUri || '',
+      report.imageUri || '',
       report.transcript || '',
       report.visionSeverity || '',
+      report.visualTriageAnalysis || '',
+      report.injuriesAndSymptoms || '',
       report.extractedSummary || '',
       report.triagePriority || 'AMARILLO',
       JSON.stringify(report.needs || []),
@@ -134,8 +148,12 @@ export function triageResultToReport(
     createdAt: result.createdAt,
     source,
     status: 'borrador',
+    audioUri: result.audioUri,
+    imageUri: result.imageUri,
     transcript: result.transcript,
     visionSeverity: result.visionSeverity,
+    visualTriageAnalysis: result.visualTriageAnalysis,
+    injuriesAndSymptoms: result.injuriesAndSymptoms,
     extractedSummary: result.extractedSummary,
     triagePriority: result.triagePriority,
     needs: result.needs,
@@ -258,6 +276,8 @@ export function updateReportFields(
     needs?: DisasterNeedCategory[];
     reportedPeopleCount?: number;
     locationReference?: string;
+    injuriesAndSymptoms?: string;
+    visualTriageAnalysis?: string;
     status?: ReportStatus;
   }
 ): void {
@@ -283,6 +303,14 @@ export function updateReportFields(
   if (fields.locationReference !== undefined) {
     updates.push('location_reference = ?');
     params.push(fields.locationReference || '');
+  }
+  if (fields.injuriesAndSymptoms !== undefined) {
+    updates.push('injuries_and_symptoms = ?');
+    params.push(fields.injuriesAndSymptoms || '');
+  }
+  if (fields.visualTriageAnalysis !== undefined) {
+    updates.push('visual_triage_analysis = ?');
+    params.push(fields.visualTriageAnalysis || '');
   }
   if (fields.status !== undefined) {
     updates.push('status = ?');

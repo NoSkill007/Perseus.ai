@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   StyleSheet,
   Text,
@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   Alert,
   ActivityIndicator,
+  Animated,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
@@ -23,7 +24,7 @@ import {
   reportExists,
   saveReport,
 } from '../../src/services/reportService';
-import { syncReportsToPeer, processIncomingPacket } from '../../src/services/syncEngine';
+import { syncReportsToPeer, syncReportsBeaconLoop, processIncomingPacket } from '../../src/services/syncEngine';
 import { getRecentSyncLogs, getSyncStats } from '../../src/services/syncLogService';
 import { getRescueNodes, upsertRescueNode } from '../../src/services/nodeService';
 import { createPacket } from '../../src/services/p2pTransport';
@@ -46,7 +47,14 @@ export default function SincronizarScreen() {
   const [transport, setTransport] = useState<P2PTransportType>('wifi_lan');
   const [peerAddress, setPeerAddress] = useState('192.168.43.1'); // IP hotspot default o ID BLE
 
-  // Estados de transmisión y escucha
+  // Estados de Baliza Continua (Beacon SOS)
+  const [isBeaconActive, setIsBeaconActive] = useState(false);
+  const [beaconAttemptCount, setBeaconAttemptCount] = useState(0);
+  const [isBatterySaving, setIsBatterySaving] = useState(false);
+  const beaconAbortRef = useRef<{ aborted: boolean }>({ aborted: false });
+  const pulseRadarAnim = useRef(new Animated.Value(1)).current;
+
+  // Estados de transmisión tradicional y escucha
   const [isListening, setIsListening] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncProgress, setSyncProgress] = useState(0);
@@ -104,7 +112,97 @@ export default function SincronizarScreen() {
   };
 
   /**
-   * Ejecuta la sincronización multi-transporte P2P (Wi-Fi o Bluetooth)
+   * Inicia la Baliza SOS Continua (Duty-Cycling y reintentos infinitos hasta ACK o cancelación)
+   */
+  const handleStartContinuousBeacon = async () => {
+    if (selectedReportIds.size === 0) {
+      Alert.alert('Sin selección', 'Selecciona al menos un reporte para emitir la baliza SOS.');
+      return;
+    }
+    if (!peerAddress.trim()) {
+      Alert.alert('Dirección requerida', 'Ingresa la IP del Hotspot o ID Bluetooth del dispositivo receptor.');
+      return;
+    }
+
+    beaconAbortRef.current = { aborted: false };
+    setIsBeaconActive(true);
+    setBeaconAttemptCount(1);
+    setIsBatterySaving(false);
+    setSyncStatusMsg('Iniciando baliza continua SOS...');
+
+    // Animación de radar pulsante
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseRadarAnim, {
+          toValue: 1.25,
+          duration: 900,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseRadarAnim, {
+          toValue: 1,
+          duration: 900,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+
+    const deviceId = profile?.phone || 'node-device-01';
+
+    try {
+      const result = await syncReportsBeaconLoop(db, {
+        reportIds: Array.from(selectedReportIds),
+        targetAddress: peerAddress,
+        transport,
+        localProfile: profile,
+        deviceId,
+        abortSignal: beaconAbortRef.current,
+        onStatusUpdate: (msg, isSleeping, count) => {
+          setSyncStatusMsg(msg);
+          setIsBatterySaving(!!isSleeping);
+          if (count) setBeaconAttemptCount(count);
+        },
+      });
+
+      pulseRadarAnim.stopAnimation();
+      pulseRadarAnim.setValue(1);
+
+      if (result.success) {
+        Alert.alert(
+          '✅ ¡Rescatista Conectado!',
+          `Se entregaron ${result.reportsSent} reporte(s) tras ${result.totalAttempts || 1} balizas vía ${
+            transport === 'bluetooth' ? 'Bluetooth' : 'Wi-Fi Hotspot'
+          }. ¡Acuse ACK confirmado!`
+        );
+        setSelectedReportIds(new Set());
+      } else if (!beaconAbortRef.current.aborted) {
+        Alert.alert('Baliza detenida', result.error || 'La transmisión fue interrumpida.');
+      }
+    } catch (err: any) {
+      pulseRadarAnim.stopAnimation();
+      pulseRadarAnim.setValue(1);
+      Alert.alert('Error', err.message || 'Error en la baliza continua');
+    } finally {
+      setIsBeaconActive(false);
+      setIsBatterySaving(false);
+      setSyncStatusMsg('');
+      loadData();
+    }
+  };
+
+  /**
+   * Detiene manualmente la baliza continua SOS
+   */
+  const handleStopContinuousBeacon = () => {
+    beaconAbortRef.current.aborted = true;
+    setIsBeaconActive(false);
+    setIsBatterySaving(false);
+    pulseRadarAnim.stopAnimation();
+    pulseRadarAnim.setValue(1);
+    setSyncStatusMsg('Baliza detenida manualmente.');
+  };
+
+  /**
+   * Ejecuta la sincronización multi-transporte puntual P2P
    */
   const handleStartSync = async () => {
     if (selectedReportIds.size === 0) {
@@ -393,31 +491,94 @@ export default function SincronizarScreen() {
                 })
               )}
 
-              {/* Botón de Sincronizar */}
+              {/* Interfaz de Baliza Continua (Beacon SOS) y Envío */}
               {pendingReports.length > 0 && (
-                <TouchableOpacity
-                  style={[
-                    styles.mainButton,
-                    (isSyncing || selectedReportIds.size === 0) && styles.mainButtonDisabled,
-                  ]}
-                  onPress={handleStartSync}
-                  disabled={isSyncing || selectedReportIds.size === 0}
-                  activeOpacity={0.8}
-                >
-                  {isSyncing ? (
-                    <ActivityIndicator color="#F8FAFC" />
+                <View style={{ marginTop: 12 }}>
+                  {isBeaconActive ? (
+                    /* Tarjeta Activa de Baliza Continua con Radar */
+                    <View style={styles.beaconActiveCard}>
+                      <View style={styles.beaconHeaderRow}>
+                        <Animated.View
+                          style={[
+                            styles.beaconRadarCircle,
+                            { transform: [{ scale: pulseRadarAnim }] },
+                          ]}
+                        >
+                          <Ionicons
+                            name="radio"
+                            size={28}
+                            color={isBatterySaving ? '#F59E0B' : '#EF4444'}
+                          />
+                        </Animated.View>
+                        <View style={{ flex: 1, marginLeft: 12 }}>
+                          <Text style={styles.beaconTitleText}>
+                            {isBatterySaving
+                              ? '🔋 Ciclo de Ahorro de Batería'
+                              : `🚨 Baliza SOS Activa (#${beaconAttemptCount})`}
+                          </Text>
+                          <Text style={styles.beaconStatusText} numberOfLines={2}>
+                            {syncStatusMsg || 'Transmitiendo ráfaga por radio...'}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {/* Botón para Cancelar Baliza */}
+                      <TouchableOpacity
+                        style={styles.stopBeaconButton}
+                        onPress={handleStopContinuousBeacon}
+                        activeOpacity={0.8}
+                      >
+                        <Ionicons name="stop-circle" size={22} color="#F8FAFC" />
+                        <Text style={styles.stopBeaconButtonText}>
+                          Cancelar Búsqueda / Detener Baliza
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
                   ) : (
-                    <Ionicons name="send" size={20} color="#F8FAFC" />
+                    /* Botones cuando no está activa la baliza */
+                    <>
+                      {/* Botón Principal: Baliza Continua SOS */}
+                      <TouchableOpacity
+                        style={[
+                          styles.mainButton,
+                          styles.beaconMainButton,
+                          selectedReportIds.size === 0 && styles.mainButtonDisabled,
+                        ]}
+                        onPress={handleStartContinuousBeacon}
+                        disabled={selectedReportIds.size === 0}
+                        activeOpacity={0.8}
+                      >
+                        <Ionicons name="radio" size={20} color="#F8FAFC" />
+                        <Text style={styles.mainButtonText}>
+                          🚨 Emitir Baliza Continua SOS ({selectedReportIds.size})
+                        </Text>
+                      </TouchableOpacity>
+
+                      {/* Botón Secundario: Envío Puntual Único */}
+                      <TouchableOpacity
+                        style={[
+                          styles.secondaryButton,
+                          (isSyncing || selectedReportIds.size === 0) && styles.mainButtonDisabled,
+                        ]}
+                        onPress={handleStartSync}
+                        disabled={isSyncing || selectedReportIds.size === 0}
+                        activeOpacity={0.8}
+                      >
+                        {isSyncing ? (
+                          <ActivityIndicator color="#3B82F6" />
+                        ) : (
+                          <Ionicons name="paper-plane-outline" size={18} color="#3B82F6" />
+                        )}
+                        <Text style={styles.secondaryButtonText}>
+                          {isSyncing ? 'Enviando...' : 'Intento de Envío Único'}
+                        </Text>
+                      </TouchableOpacity>
+                    </>
                   )}
-                  <Text style={styles.mainButtonText}>
-                    {isSyncing
-                      ? 'Sincronizando...'
-                      : `Sincronizar ${selectedReportIds.size} Reporte(s)`}
-                  </Text>
-                </TouchableOpacity>
+                </View>
               )}
 
-              {/* Barra de progreso de envío */}
+              {/* Barra de progreso de envío puntual */}
               {isSyncing && (
                 <View style={styles.progressContainer}>
                   <View style={[styles.progressBar, { width: `${syncProgress * 100}%` }]} />
@@ -567,6 +728,66 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     marginTop: 12,
+  },
+  beaconMainButton: {
+    backgroundColor: '#DC2626',
+    borderWidth: 1,
+    borderColor: '#EF4444',
+  },
+  beaconActiveCard: {
+    backgroundColor: '#1E293B',
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#EF4444',
+    padding: 16,
+    shadowColor: '#EF4444',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  beaconHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  beaconRadarCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#0F172A',
+    borderWidth: 2,
+    borderColor: '#EF4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  beaconTitleText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#F8FAFC',
+  },
+  beaconStatusText: {
+    fontSize: 12,
+    color: '#94A3B8',
+    marginTop: 3,
+    lineHeight: 16,
+  },
+  stopBeaconButton: {
+    backgroundColor: '#7F1D1D',
+    borderColor: '#EF4444',
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  stopBeaconButtonText: {
+    color: '#F8FAFC',
+    fontSize: 14,
+    fontWeight: '700',
   },
   mainButtonDanger: { backgroundColor: '#EF4444' },
   mainButtonDisabled: { backgroundColor: '#334155' },
