@@ -77,6 +77,41 @@ export default function PerfilScreen() {
     }, [db])
   );
 
+  const hasChanges = useMemo(() => {
+    if (!profile) return false;
+    const currentDisabilityDesc = hasDisability ? disabilityDescription.trim() : '';
+    const origDisabilityDesc = profile.hasDisability ? (profile.disabilityDescription || '').trim() : '';
+
+    return (
+      fullName.trim() !== (profile.fullName || '').trim() ||
+      age.trim() !== String(profile.age ?? '').trim() ||
+      sex !== profile.sex ||
+      phone.trim() !== (profile.phone || '').trim() ||
+      address.trim() !== (profile.address || '').trim() ||
+      province !== profile.province ||
+      bloodType !== (profile.bloodType || '') ||
+      hasDisability !== profile.hasDisability ||
+      currentDisabilityDesc !== origDisabilityDesc ||
+      medicalConditions.trim() !== (profile.medicalConditions || '').trim() ||
+      emergencyContactName.trim() !== (profile.emergencyContactName || '').trim() ||
+      emergencyContactPhone.trim() !== (profile.emergencyContactPhone || '').trim()
+    );
+  }, [
+    profile,
+    fullName,
+    age,
+    sex,
+    phone,
+    address,
+    province,
+    bloodType,
+    hasDisability,
+    disabilityDescription,
+    medicalConditions,
+    emergencyContactName,
+    emergencyContactPhone,
+  ]);
+
   const handleSave = () => {
     if (!fullName.trim() || !age.trim() || !phone.trim() || !province) {
       Alert.alert('Campos requeridos', 'Nombre, edad, teléfono y provincia son obligatorios.');
@@ -84,7 +119,7 @@ export default function PerfilScreen() {
     }
 
     const updated: UserProfile = {
-      id: 1,
+      id: profile?.id || 1,
       fullName: fullName.trim(),
       age: parseInt(age, 10),
       sex,
@@ -97,12 +132,20 @@ export default function PerfilScreen() {
       medicalConditions: medicalConditions.trim() || undefined,
       emergencyContactName: emergencyContactName.trim() || undefined,
       emergencyContactPhone: emergencyContactPhone.trim() || undefined,
-      role,
+      role: profile?.role || role,
       createdAt: profile?.createdAt || Date.now(),
       updatedAt: Date.now(),
     };
 
     saveProfile(db, updated);
+    setProfile(updated);
+    setFullName(updated.fullName);
+    setAge(String(updated.age));
+    setAddress(updated.address || '');
+    setDisabilityDescription(updated.disabilityDescription || '');
+    setMedicalConditions(updated.medicalConditions || '');
+    setEmergencyContactName(updated.emergencyContactName || '');
+    setEmergencyContactPhone(updated.emergencyContactPhone || '');
     Alert.alert('✅ Guardado', 'Tu perfil ha sido actualizado.');
   };
 
@@ -110,10 +153,25 @@ export default function PerfilScreen() {
     if (newRole === role) return;
     Alert.alert(
       'Cambiar rol',
-      `¿Deseas cambiar tu rol a ${newRole === 'rescatista' ? 'Rescatista' : 'Ciudadano'}? Esto cambiará la vista de la aplicación.`,
+      `¿Deseas cambiar tu rol a ${newRole === 'rescatista' ? 'Rescatista' : 'Ciudadano'}? Esto cambiará la vista de la aplicación y aislará los reportes según tu rol.`,
       [
         { text: 'Cancelar', style: 'cancel' },
-        { text: 'Confirmar', onPress: () => setRole(newRole) },
+        {
+          text: 'Confirmar',
+          onPress: () => {
+            setRole(newRole);
+            const currentProfile = profile || getProfile(db);
+            if (currentProfile) {
+              const updated: UserProfile = {
+                ...currentProfile,
+                role: newRole,
+                updatedAt: Date.now(),
+              };
+              saveProfile(db, updated);
+              setProfile(updated);
+            }
+          },
+        },
       ]
     );
   };
@@ -217,12 +275,17 @@ export default function PerfilScreen() {
             <Text style={[styles.roleLabel, role === 'rescatista' && styles.roleLabelActive]}>Rescatista</Text>
           </TouchableOpacity>
         </View>
+        <Text style={styles.roleHint}>
+          💡 El cambio de rol se aplica de inmediato al confirmar la selección.
+        </Text>
 
-        {/* Guardar */}
-        <TouchableOpacity style={styles.saveButton} onPress={handleSave} activeOpacity={0.8}>
-          <Ionicons name="save" size={20} color="#FFFFFF" />
-          <Text style={styles.saveButtonText}>Guardar cambios</Text>
-        </TouchableOpacity>
+        {/* Guardar cambios (solo visible si hay cambios pendientes en los datos del perfil) */}
+        {hasChanges && (
+          <TouchableOpacity style={styles.saveButton} onPress={handleSave} activeOpacity={0.8}>
+            <Ionicons name="save" size={20} color="#FFFFFF" />
+            <Text style={styles.saveButtonText}>Guardar cambios</Text>
+          </TouchableOpacity>
+        )}
 
         {/* Apariencia / Modo Claro / Oscuro */}
         <Text style={[styles.sectionTitle, { marginTop: 26 }]}>🎨 Apariencia de la App</Text>
@@ -336,6 +399,20 @@ export default function PerfilScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Barra flotante si hay cambios sin guardar */}
+      {hasChanges && (
+        <View style={styles.floatingBar}>
+          <View style={styles.floatingContent}>
+            <Ionicons name="alert-circle" size={20} color={theme.primary} />
+            <Text style={styles.floatingText}>Cambios sin guardar</Text>
+          </View>
+          <TouchableOpacity style={styles.floatingButton} onPress={handleSave} activeOpacity={0.8}>
+            <Ionicons name="save" size={16} color="#FFFFFF" />
+            <Text style={styles.floatingButtonText}>Guardar</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -344,7 +421,7 @@ function createStyles(theme: ThemeColors) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: theme.background },
     scroll: { flex: 1 },
-    scrollContent: { padding: 16, paddingBottom: 40 },
+    scrollContent: { padding: 16, paddingBottom: 80 },
     title: { fontSize: 22, fontWeight: '800', color: theme.text, marginBottom: 16 },
     sectionTitle: { fontSize: 15, fontWeight: '700', color: theme.text, marginTop: 20, marginBottom: 6 },
     label: { color: theme.textMuted, fontSize: 13, fontWeight: '600', marginTop: 12, marginBottom: 4 },
@@ -484,5 +561,56 @@ function createStyles(theme: ThemeColors) {
     modalItemTextActive: { color: theme.primary, fontWeight: '600' },
     modalClose: { paddingVertical: 14, alignItems: 'center', marginTop: 8 },
     modalCloseText: { color: theme.primary, fontSize: 16, fontWeight: '600' },
+    roleHint: {
+      color: theme.textMuted,
+      fontSize: 12,
+      marginTop: 8,
+      fontStyle: 'italic',
+      lineHeight: 16,
+    },
+    floatingBar: {
+      position: 'absolute',
+      bottom: 16,
+      left: 16,
+      right: 16,
+      backgroundColor: theme.card,
+      borderRadius: 14,
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      borderWidth: 1.5,
+      borderColor: theme.primary,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 8,
+      elevation: 6,
+    },
+    floatingContent: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    floatingText: {
+      color: theme.text,
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    floatingButton: {
+      backgroundColor: theme.primary,
+      borderRadius: 8,
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    floatingButtonText: {
+      color: '#FFFFFF',
+      fontSize: 14,
+      fontWeight: '700',
+    },
   });
 }

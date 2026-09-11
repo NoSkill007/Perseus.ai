@@ -18,9 +18,10 @@ import {
   getReportsByPriority,
   searchReports,
 } from '../../src/services/reportService';
+import { getProfile } from '../../src/services/profileService';
 import { useTheme } from '../../src/context/ThemeContext';
 import { PRIORITY_COLORS, type ThemeColors } from '../../src/constants/theme';
-import type { ReportRecord, StartPriority, ReportStatus } from '../../src/types/triageTypes';
+import type { ReportRecord, StartPriority, ReportStatus, ReportSource, UserProfile } from '../../src/types/triageTypes';
 
 const STATUS_LABELS: Record<string, string> = {
   borrador: 'Borrador',
@@ -38,21 +39,28 @@ export default function HistorialScreen() {
   const router = useRouter();
   const { theme } = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [reports, setReports] = useState<ReportRecord[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
 
+  const isRescatista = profile?.role === 'rescatista';
+
   const loadReports = useCallback(() => {
     try {
+      const p = getProfile(db);
+      setProfile(p);
+      const targetSource: ReportSource = p?.role === 'rescatista' ? 'received' : 'local';
+
       if (searchQuery.trim()) {
-        setReports(searchReports(db, searchQuery.trim()));
+        setReports(searchReports(db, searchQuery.trim(), targetSource));
       } else if (activeFilter === 'all') {
-        setReports(getReports(db));
+        setReports(getReports(db, targetSource));
       } else if (['ROJO', 'AMARILLO', 'VERDE', 'NEGRO'].includes(activeFilter)) {
-        setReports(getReportsByPriority(db, activeFilter as StartPriority));
+        setReports(getReportsByPriority(db, activeFilter as StartPriority, targetSource));
       } else {
-        setReports(getReportsByStatus(db, activeFilter as ReportStatus));
+        setReports(getReportsByStatus(db, activeFilter as ReportStatus, targetSource));
       }
     } catch (err) {
       console.error('[Historial] Error cargando reportes:', err);
@@ -82,7 +90,14 @@ export default function HistorialScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.headerContainer}>
-        <Text style={styles.title}>Historial de Reportes</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
+          <Text style={styles.title}>Historial de Reportes</Text>
+        </View>
+        <Text style={{ fontSize: 12, color: theme.textMuted, marginBottom: 12 }}>
+          {isRescatista
+            ? 'Casos y fichas de emergencia recibidas por P2P'
+            : 'Reportes de emergencia creados en este dispositivo'}
+        </Text>
 
         {/* Búsqueda */}
         <View style={styles.searchContainer}>
@@ -137,7 +152,11 @@ export default function HistorialScreen() {
             <Ionicons name="document-text-outline" size={48} color={theme.textMuted} />
             <Text style={styles.emptyText}>Sin reportes</Text>
             <Text style={styles.emptySubtext}>
-              {searchQuery ? 'No se encontraron resultados' : 'Los reportes que crees aparecerán aquí'}
+              {searchQuery
+                ? 'No se encontraron resultados'
+                : isRescatista
+                ? 'No hay reportes recibidos todavía. Conecta vía P2P para capturar balizas o recibir emergencias.'
+                : 'Tus reportes de emergencia aparecerán aquí'}
             </Text>
           </View>
         ) : (

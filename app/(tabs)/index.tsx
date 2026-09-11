@@ -131,9 +131,10 @@ export default function HomeScreen() {
     try {
       const p = getProfile(db);
       setProfile(p);
-      setRecentReports(getRecentReports(db, 5));
+      const isResc = p?.role === 'rescatista';
+      setRecentReports(getRecentReports(db, 5, 'local'));
       setReceivedReports(getReceivedReports(db));
-      setCounts(getReportCounts(db));
+      setCounts(getReportCounts(db, isResc ? 'received' : 'local'));
 
       const conflictList = getConflictingAssignments(db);
       setConflicts(new Set(conflictList.map((c) => c.reportId)));
@@ -213,16 +214,16 @@ export default function HomeScreen() {
             {/* Estadísticas */}
             <View style={styles.statsRow}>
               <View style={[styles.statCard, { borderColor: theme.danger }]}>
-                <Text style={styles.statNumber}>{counts['recibido'] || 0}</Text>
-                <Text style={styles.statLabel}>Pendientes</Text>
+                <Text numberOfLines={1} style={styles.statNumber}>{counts['recibido'] || 0}</Text>
+                <Text numberOfLines={1} style={styles.statLabel}>Pendientes</Text>
               </View>
               <View style={[styles.statCard, { borderColor: theme.warning }]}>
-                <Text style={styles.statNumber}>{counts['en_atencion'] || 0}</Text>
-                <Text style={styles.statLabel}>En Atención</Text>
+                <Text numberOfLines={1} style={styles.statNumber}>{counts['en_atencion'] || 0}</Text>
+                <Text numberOfLines={1} style={styles.statLabel}>En Atención</Text>
               </View>
               <View style={[styles.statCard, { borderColor: theme.success }]}>
-                <Text style={styles.statNumber}>{counts['completado'] || 0}</Text>
-                <Text style={styles.statLabel}>Completados</Text>
+                <Text numberOfLines={1} style={styles.statNumber}>{counts['completado'] || 0}</Text>
+                <Text numberOfLines={1} style={styles.statLabel}>Completados</Text>
               </View>
             </View>
 
@@ -286,34 +287,6 @@ export default function HomeScreen() {
               ))
             )}
 
-            {/* Acceso a Laboratorio de Audio Whisper */}
-            <TouchableOpacity
-              style={styles.labCard}
-              onPress={() => router.push('/whisper-test')}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="mic-circle" size={28} color={theme.sky} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.labTitle}>Laboratorio Whisper ASR</Text>
-                <Text style={styles.labSubtitle}>Probar captura, carga y transcripción aislada</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
-            </TouchableOpacity>
-
-            {/* Acceso a Laboratorio de Visión Computacional */}
-            <TouchableOpacity
-              style={[styles.labCard, { borderColor: theme.purple }]}
-              onPress={() => router.push('/vision-test')}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="eye" size={28} color={theme.purple} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.labTitle}>Laboratorio Visión (VisionPsy)</Text>
-                <Text style={styles.labSubtitle}>Probar análisis visual de daños y peligros on-device</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
-            </TouchableOpacity>
-
             {/* Info */}
             <View style={styles.infoCard}>
               <Ionicons name="shield-checkmark" size={24} color={theme.success} />
@@ -362,17 +335,19 @@ function createStyles(theme: ThemeColors) {
     statsRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 },
     statCard: {
       flex: 1,
+      minWidth: 0,
       backgroundColor: theme.card,
       borderRadius: 12,
-      padding: 12,
-      marginHorizontal: 4,
+      padding: 10,
+      marginHorizontal: 3,
       alignItems: 'center',
       borderLeftWidth: 3,
       borderWidth: 1,
       borderColor: theme.border,
+      overflow: 'hidden',
     },
-    statNumber: { fontSize: 24, fontWeight: '800', color: theme.text },
-    statLabel: { fontSize: 11, color: theme.textMuted, marginTop: 2 },
+    statNumber: { fontSize: 20, fontWeight: '800', color: theme.text },
+    statLabel: { fontSize: 10.5, color: theme.textMuted, marginTop: 2 },
     sectionTitle: { fontSize: 18, fontWeight: '700', color: theme.text, marginBottom: 12 },
     card: {
       backgroundColor: theme.card,

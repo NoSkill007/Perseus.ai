@@ -21,6 +21,7 @@
         "backgroundColor": "#0F172A"
       },
       "package": "ai.perseus.app",
+      "usesCleartextTraffic": true,
       "permissions": [
         "RECORD_AUDIO",
         "CAMERA",

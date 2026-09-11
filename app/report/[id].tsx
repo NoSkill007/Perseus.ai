@@ -18,6 +18,7 @@ import { Audio } from 'expo-av';
 import { useTheme } from '../../src/context/ThemeContext';
 import { ThemeColors } from '../../src/constants/theme';
 import { getReportById, deleteReport } from '../../src/services/reportService';
+import { getProfile } from '../../src/services/profileService';
 import { generateAiExecutiveSummary } from '../../src/services/ai/triageExtractor';
 import type { ReportRecord, StartPriority } from '../../src/types/triageTypes';
 
@@ -54,6 +55,8 @@ export default function ReportDetailScreen() {
   const db = useSQLiteContext();
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const profile = useMemo(() => getProfile(db), [db]);
+  const isRescatista = profile?.role === 'rescatista';
   const [report, setReport] = useState<ReportRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [showAudit, setShowAudit] = useState(false);
@@ -524,7 +527,7 @@ export default function ReportDetailScreen() {
 
         {/* Acciones */}
         <View style={styles.actionsContainer}>
-          {report.source === 'local' && (
+          {!isRescatista && report.source === 'local' && (
             <TouchableOpacity
               style={styles.editButton}
               onPress={() => router.push('/(tabs)/sincronizar' as any)}

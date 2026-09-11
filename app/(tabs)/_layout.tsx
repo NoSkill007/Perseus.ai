@@ -1,4 +1,4 @@
-import { Tabs } from 'expo-router';
+import { Tabs, usePathname } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -7,12 +7,14 @@ import { useTheme } from '../../src/context/ThemeContext';
 
 /**
  * Tab Navigator — Perseus.ai
- * 5 tabs: Inicio, Reportar, Historial, Sincronizar, Perfil
+ * Ciudadano: Inicio, Reportar, Historial, P2P, Perfil
+ * Rescatista: Panel, Historial, P2P, Perfil (pestaña Reportar oculta)
  * Ajusta automáticamente el padding inferior según los gestos o botones del sistema.
  */
 export default function TabLayout() {
   const db = useSQLiteContext();
   const insets = useSafeAreaInsets();
+  const pathname = usePathname();
   const role = getUserRole(db);
   const isRescatista = role === 'rescatista';
   const { theme } = useTheme();
@@ -51,6 +53,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="reportar"
         options={{
+          href: isRescatista ? null : '/(tabs)/reportar',
           title: 'Reportar',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="warning" size={size} color={color} />

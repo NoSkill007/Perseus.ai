@@ -149,6 +149,12 @@ export function triageResultToReport(
   district?: string,
   corregimiento?: string
 ): ReportRecord {
+  const formLocationParts = [corregimiento, district, province]
+    .map((s) => (s ? s.trim() : ''))
+    .filter((s) => s.length > 0);
+  const formLocation = formLocationParts.length > 0 ? formLocationParts.join(', ') : undefined;
+  const hasSpecificFormLocation = Boolean(corregimiento?.trim() || district?.trim());
+
   return {
     reportId: result.reportId,
     createdAt: result.createdAt,
@@ -166,7 +172,7 @@ export function triageResultToReport(
     triagePriority: result.triagePriority,
     needs: result.needs,
     reportedPeopleCount: result.reportedPeopleCount,
-    locationReference: result.locationReference,
+    locationReference: hasSpecificFormLocation && formLocation ? formLocation : (result.locationReference || formLocation),
     missingFields: result.missingFields,
     rawModelOutput: result.rawModelOutput,
     isLocalInference: result.isLocalInference,
@@ -180,11 +186,15 @@ export function triageResultToReport(
 }
 
 /**
- * Obtiene todos los reportes ordenados por fecha descendente
+ * Obtiene reportes ordenados por fecha descendente, opcionalmente filtrados por origen (local vs received)
  */
-export function getReports(db: SQLiteDatabase): ReportRecord[] {
+export function getReports(db: SQLiteDatabase, source?: ReportSource): ReportRecord[] {
   try {
-    const rows = db.getAllSync<ReportRow>('SELECT * FROM reports ORDER BY created_at DESC');
+    const sql = source
+      ? 'SELECT * FROM reports WHERE source = ? ORDER BY created_at DESC'
+      : 'SELECT * FROM reports ORDER BY created_at DESC';
+    const params = source ? [source] : [];
+    const rows = db.getAllSync<ReportRow>(sql, params);
     return rows.map(rowToReport);
   } catch (err) {
     console.warn('[ReportService] Error al obtener reportes:', err);
@@ -193,14 +203,15 @@ export function getReports(db: SQLiteDatabase): ReportRecord[] {
 }
 
 /**
- * Obtiene reportes filtrados por estado
+ * Obtiene reportes filtrados por estado y opcionalmente por origen
  */
-export function getReportsByStatus(db: SQLiteDatabase, status: ReportStatus): ReportRecord[] {
+export function getReportsByStatus(db: SQLiteDatabase, status: ReportStatus, source?: ReportSource): ReportRecord[] {
   try {
-    const rows = db.getAllSync<ReportRow>(
-      'SELECT * FROM reports WHERE status = ? ORDER BY created_at DESC',
-      [status]
-    );
+    const sql = source
+      ? 'SELECT * FROM reports WHERE status = ? AND source = ? ORDER BY created_at DESC'
+      : 'SELECT * FROM reports WHERE status = ? ORDER BY created_at DESC';
+    const params = source ? [status, source] : [status];
+    const rows = db.getAllSync<ReportRow>(sql, params);
     return rows.map(rowToReport);
   } catch (err) {
     console.warn('[ReportService] Error al obtener reportes por estado:', err);
@@ -209,14 +220,15 @@ export function getReportsByStatus(db: SQLiteDatabase, status: ReportStatus): Re
 }
 
 /**
- * Obtiene reportes filtrados por prioridad
+ * Obtiene reportes filtrados por prioridad y opcionalmente por origen
  */
-export function getReportsByPriority(db: SQLiteDatabase, priority: StartPriority): ReportRecord[] {
+export function getReportsByPriority(db: SQLiteDatabase, priority: StartPriority, source?: ReportSource): ReportRecord[] {
   try {
-    const rows = db.getAllSync<ReportRow>(
-      'SELECT * FROM reports WHERE triage_priority = ? ORDER BY created_at DESC',
-      [priority]
-    );
+    const sql = source
+      ? 'SELECT * FROM reports WHERE triage_priority = ? AND source = ? ORDER BY created_at DESC'
+      : 'SELECT * FROM reports WHERE triage_priority = ? ORDER BY created_at DESC';
+    const params = source ? [priority, source] : [priority];
+    const rows = db.getAllSync<ReportRow>(sql, params);
     return rows.map(rowToReport);
   } catch (err) {
     console.warn('[ReportService] Error al obtener reportes por prioridad:', err);
@@ -425,13 +437,15 @@ export function deleteReport(db: SQLiteDatabase, reportId: string): void {
 }
 
 /**
- * Cuenta reportes por estado (para dashboard del rescatista)
+ * Cuenta reportes por estado, opcionalmente filtrados por origen (local vs received)
  */
-export function getReportCounts(db: SQLiteDatabase): Record<string, number> {
+export function getReportCounts(db: SQLiteDatabase, source?: ReportSource): Record<string, number> {
   try {
-    const rows = db.getAllSync<{ status: string; count: number }>(
-      'SELECT status, COUNT(*) as count FROM reports GROUP BY status'
-    );
+    const sql = source
+      ? 'SELECT status, COUNT(*) as count FROM reports WHERE source = ? GROUP BY status'
+      : 'SELECT status, COUNT(*) as count FROM reports GROUP BY status';
+    const params = source ? [source] : [];
+    const rows = db.getAllSync<{ status: string; count: number }>(sql, params);
     const counts: Record<string, number> = {};
     for (const row of rows) {
       counts[row.status] = row.count;
@@ -444,13 +458,13 @@ export function getReportCounts(db: SQLiteDatabase): Record<string, number> {
 }
 
 /**
- * Obtiene los últimos N reportes locales
+ * Obtiene los últimos N reportes, por defecto locales
  */
-export function getRecentReports(db: SQLiteDatabase, limit: number = 3): ReportRecord[] {
+export function getRecentReports(db: SQLiteDatabase, limit: number = 3, source: ReportSource = 'local'): ReportRecord[] {
   try {
     const rows = db.getAllSync<ReportRow>(
       'SELECT * FROM reports WHERE source = ? ORDER BY created_at DESC LIMIT ?',
-      ['local', limit]
+      [source, limit]
     );
     return rows.map(rowToReport);
   } catch (err) {
@@ -460,14 +474,15 @@ export function getRecentReports(db: SQLiteDatabase, limit: number = 3): ReportR
 }
 
 /**
- * Búsqueda simple en resúmenes de reportes
+ * Búsqueda simple en resúmenes de reportes, opcionalmente filtrada por origen
  */
-export function searchReports(db: SQLiteDatabase, query: string): ReportRecord[] {
+export function searchReports(db: SQLiteDatabase, query: string, source?: ReportSource): ReportRecord[] {
   try {
-    const rows = db.getAllSync<ReportRow>(
-      'SELECT * FROM reports WHERE extracted_summary LIKE ? ORDER BY created_at DESC',
-      [`%${query}%`]
-    );
+    const sql = source
+      ? 'SELECT * FROM reports WHERE extracted_summary LIKE ? AND source = ? ORDER BY created_at DESC'
+      : 'SELECT * FROM reports WHERE extracted_summary LIKE ? ORDER BY created_at DESC';
+    const params = source ? [`%${query}%`, source] : [`%${query}%`];
+    const rows = db.getAllSync<ReportRow>(sql, params);
     return rows.map(rowToReport);
   } catch (err) {
     console.warn('[ReportService] Error en búsqueda de reportes:', err);

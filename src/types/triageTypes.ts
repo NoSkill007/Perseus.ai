@@ -29,6 +29,8 @@ export interface TriageInput {
   district?: string;
   /** Corregimiento o referencia territorial (opcional) */
   corregimiento?: string;
+  /** Cantidad de personas afectadas ingresada en el formulario (dato fijo oficial) */
+  reportedPeopleCount?: number;
   /** Identificador único del dispositivo creador */
   operatorDeviceId?: string;
 }

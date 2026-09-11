@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import {
   StyleSheet,
   Text,
@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Audio } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
 import { runTriagePipeline } from '../../src/services/ai/triagePipeline';
@@ -47,7 +47,7 @@ const PROVINCIAS = [
   'Comarca Guna Yala',
 ];
 
-type ProcessingStage = 'audio' | 'image' | 'llm';
+type ProcessingStage = 'audio' | 'llm';
 
 function formatDuration(seconds: number): string {
   const mins = Math.floor(seconds / 60);
@@ -70,6 +70,23 @@ export default function ReportarScreen() {
   const router = useRouter();
   const { theme } = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+
+  // Verificar rol de usuario: el rescatista no puede reportar emergencias
+  const userProfile = useMemo(() => getProfile(db), [db]);
+  const isRescatista = userProfile?.role === 'rescatista';
+
+  useFocusEffect(
+    useCallback(() => {
+      const p = getProfile(db);
+      if (p?.role === 'rescatista') {
+        Alert.alert(
+          'Acceso Restringido',
+          'El rol de Rescatista está destinado exclusivamente a la recepción, atención y triage de reportes de emergencia.',
+          [{ text: 'Ir al Panel', onPress: () => router.replace('/(tabs)') }]
+        );
+      }
+    }, [db, router])
+  );
 
   // Estados del formulario
   const [textRelato, setTextRelato] = useState('');
@@ -327,12 +344,7 @@ export default function ReportarScreen() {
     // 2. Iniciar pantalla de procesamiento con etapas
     setIsProcessing(true);
 
-    let initialStage: ProcessingStage = 'llm';
-    if (hasAudio) {
-      initialStage = 'audio';
-    } else if (hasImage) {
-      initialStage = 'image';
-    }
+    const initialStage: ProcessingStage = hasAudio ? 'audio' : 'llm';
     setProcessingStage(initialStage);
 
     // Configurar timers visuales para retroalimentación en pantalla
@@ -340,21 +352,10 @@ export default function ReportarScreen() {
       clearTimeout(stageTimerRef.current);
     }
 
-    if (hasAudio && hasImage) {
-      stageTimerRef.current = setTimeout(() => {
-        setProcessingStage('image');
-        stageTimerRef.current = setTimeout(() => {
-          setProcessingStage('llm');
-        }, 1800);
-      }, 1600);
-    } else if (hasAudio && !hasImage) {
+    if (hasAudio) {
       stageTimerRef.current = setTimeout(() => {
         setProcessingStage('llm');
-      }, 1800);
-    } else if (!hasAudio && hasImage) {
-      stageTimerRef.current = setTimeout(() => {
-        setProcessingStage('llm');
-      }, 1800);
+      }, 1500);
     }
 
     try {
@@ -367,6 +368,7 @@ export default function ReportarScreen() {
         province,
         district: district.trim() || undefined,
         corregimiento: corregimiento.trim() || undefined,
+        reportedPeopleCount: personasAfectadas,
       };
 
       console.log('[ReportarScreen] Llamando a runTriagePipeline...');
@@ -425,6 +427,43 @@ export default function ReportarScreen() {
       }
     }
   };
+
+  if (isRescatista) {
+    return (
+      <SafeAreaView style={[styles.safeArea, { justifyContent: 'center', alignItems: 'center', padding: 24 }]} edges={['top']}>
+        <StatusBar barStyle={theme.statusBarStyle === 'light' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
+        <View style={{ alignItems: 'center', maxWidth: 320 }}>
+          <View
+            style={{
+              width: 80,
+              height: 80,
+              borderRadius: 40,
+              backgroundColor: theme.primary + '20',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: 20,
+            }}
+          >
+            <Ionicons name="shield-checkmark" size={44} color={theme.primary} />
+          </View>
+          <Text style={[styles.title, { textAlign: 'center', marginBottom: 10 }]}>
+            Modo Rescatista
+          </Text>
+          <Text style={{ textAlign: 'center', color: theme.textMuted, fontSize: 14, lineHeight: 22, marginBottom: 24 }}>
+            Los miembros de brigadas y rescatistas atienden y gestionan emergencias desde el Panel de Mando y el canal P2P. La emisión de reportes es exclusiva para ciudadanos.
+          </Text>
+          <TouchableOpacity
+            style={[styles.submitButton, { width: '100%', paddingVertical: 14 }]}
+            onPress={() => router.replace('/(tabs)')}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
+            <Text style={[styles.submitButtonText, { marginLeft: 8 }]}>Ir al Panel de Rescate</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -822,61 +861,31 @@ export default function ReportarScreen() {
             <Text style={styles.processingMainTitle}>Procesando con IA Local</Text>
 
             <View style={styles.stageList}>
-              <View style={styles.stageItem}>
-                <Ionicons
-                  name={
-                    processingStage === 'audio'
-                      ? 'radio'
-                      : processingStage === 'image' || processingStage === 'llm'
-                      ? 'checkmark-circle'
-                      : 'ellipse-outline'
-                  }
-                  size={20}
-                  color={
-                    processingStage === 'audio'
-                      ? '#F59E0B'
-                      : processingStage === 'image' || processingStage === 'llm'
-                      ? '#22C55E'
-                      : '#64748B'
-                  }
-                />
-                <Text
-                  style={[
-                    styles.stageText,
-                    processingStage === 'audio' && styles.stageTextActive,
-                  ]}
-                >
-                  Transcribiendo audio (Whisper)...
-                </Text>
-              </View>
-
-              <View style={styles.stageItem}>
-                <Ionicons
-                  name={
-                    processingStage === 'image'
-                      ? 'radio'
-                      : processingStage === 'llm'
-                      ? 'checkmark-circle'
-                      : 'ellipse-outline'
-                  }
-                  size={20}
-                  color={
-                    processingStage === 'image'
-                      ? '#F59E0B'
-                      : processingStage === 'llm'
-                      ? '#22C55E'
-                      : '#64748B'
-                  }
-                />
-                <Text
-                  style={[
-                    styles.stageText,
-                    processingStage === 'image' && styles.stageTextActive,
-                  ]}
-                >
-                  Analizando imagen de escena...
-                </Text>
-              </View>
+              {audioUri.length > 0 && (
+                <View style={styles.stageItem}>
+                  <Ionicons
+                    name={
+                      processingStage === 'audio'
+                        ? 'radio'
+                        : 'checkmark-circle'
+                    }
+                    size={20}
+                    color={
+                      processingStage === 'audio'
+                        ? '#F59E0B'
+                        : '#22C55E'
+                    }
+                  />
+                  <Text
+                    style={[
+                      styles.stageText,
+                      processingStage === 'audio' && styles.stageTextActive,
+                    ]}
+                  >
+                    Transcribiendo audio (Whisper)...
+                  </Text>
+                </View>
+              )}
 
               <View style={styles.stageItem}>
                 <Ionicons
