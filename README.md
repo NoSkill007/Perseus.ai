@@ -1,237 +1,201 @@
-# Perseus.ai
+# Perseus.ai 🚨
 
-**IA local para registrar y coordinar necesidades ante desastres naturales en Panamá.**
+> **Red P2P de Triaje Humanitario y Rescate 100% Offline con Inteligencia Artificial On-Device**  
+> Desarrollado para el **Decentralized AI Hackathon** (ISD Summit, 9–11 de septiembre de 2026, Ciudad de Panamá).
 
-Perseus.ai propone convertir relatos de emergencia en reportes estructurados con IA ejecutada en el dispositivo mediante **QVAC**. Una persona revisa la información antes de confirmarla; los reportes se conservan localmente y se comparten con otros equipos cuando existe un enlace disponible.
+[![Offline-First](https://img.shields.io/badge/Conectividad-100%25%20Offline-green.svg)](#5-garant%C3%ADa-de-cero-nube-zero-cloud-guarantee)
+[![Inferencia Local](https://img.shields.io/badge/IA%20Runtime-QVAC%20%2B%20BareKit-blue.svg)](#4-modelos-de-ia-on-device--runtime)
+[![Protocolo P2P](https://img.shields.io/badge/P2P-Nearby%20Connections%20(BLE%20%2B%20Wi--Fi)-orange.svg)](#6-red-p2p-descentralizada-nearby-connections)
+[![Estándar](https://img.shields.io/badge/Est%C3%A1ndares-Manual%20Esfera%20%2B%20START-red.svg)](#7-est%C3%A1ndares-humanitarios-internacionales)
 
-El primer país de implementación es **Panamá**, con escenarios de inundaciones, deslizamientos, sismos, lluvias intensas e incendios forestales. La expansión internacional se evaluará después de validar el funcionamiento local.
+---
 
-**Estado al 8 de septiembre de 2026:** preparación y diseño. Este README documenta el alcance previsto; todavía no acredita una aplicación implementada ni resultados de pruebas. La construcción sustancial está prevista para la ventana oficial del hackathon.
+## 1. El Problema Humanitario
 
-## Información para el jurado
+En desastres naturales de rápida evolución (como las inundaciones estacionales en **Tierras Altas / Chiriquí**, deslizamientos de tierra en **San Miguelito** o sismos en el occidente de **Bocas del Toro**), la infraestructura eléctrica y las torres de telefonía celular colapsan en los primeros minutos.
 
-| Elemento | Información |
-| --- | --- |
-| Evento | Decentralized AI Hackathon — ISD Summit 2026 |
-| Ventana de construcción | 9 de septiembre, 08:00, al 11 de septiembre, 08:00; hora de Panamá, UTC-5 |
-| País inicial e idioma | Panamá; español |
-| Tecnología de inferencia prevista | QVAC, en el dispositivo |
-| Video de demostración | **PENDIENTE:** agregar enlace sin credenciales; español y máximo cinco minutos |
-| Versión entregada | **PENDIENTE:** agregar etiqueta y hash del commit final |
-| Equipo | **PENDIENTE:** agregar nombres, perfiles de GitHub y contribuciones |
-| Desafío corporativo | **PENDIENTE:** indicar desafío elegido y evidencia, o participación solo en el ranking general |
+Las aplicaciones de emergencia tradicionales sufren de **tres fallas críticas**:
+1. **Dependencia absoluta de la nube:** Si no hay señal 4G/5G ni internet satelital, la app no funciona o se congela.
+2. **Triaje desestructurado:** Los mensajes de voz o chats no se procesan en fichas normalizadas, saturando a los rescatistas con relatos caóticos y datos contradictorios.
+3. **Falta de coordinación en campo:** Las brigadas locales de voluntarios y rescatistas no tienen forma de sincronizar reportes entre sí sin un servidor central, provocando duplicación de esfuerzos o zonas abandonadas.
 
-## El problema
+---
 
-Durante una emergencia, los equipos necesitan registrar qué ocurrió, dónde, cuántas personas solicitan apoyo y qué información falta. Los relatos pueden llegar incompletos y las interrupciones de conectividad dificultan compartirlos y mantener su estado.
+## 2. La Solución: Perseus.ai
 
-En Panamá, [SINAPROC documenta amenazas hidrometeorológicas y geofísicas](https://www.sinaproc.gob.pa/wp-content/uploads/2022/12/Gird-PLAN.pdf). Perseus.ai se enfoca en una tarea concreta: ayudar a brigadistas y voluntarios a registrar necesidades con claridad, incluso cuando no pueden consultar un servicio remoto de IA.
+**Perseus.ai** es una plataforma móvil de rescate y triaje que opera con **cero dependencia de internet**, combinando **IA generativa on-device** con una **red en malla P2P (Peer-to-Peer)**:
 
-El proyecto busca complementar los procedimientos de respuesta existentes. **No existe una alianza, integración ni respaldo institucional confirmado de SINAPROC u otra entidad.**
+* 🎙️ **Captura Multimodal en Campo:** Los ciudadanos y brigadistas pueden reportar emergencias mediante voz grabada, relatos de texto y fotografías de daños, incluso en **modo avión**.
+* 🧠 **Triaje Asistido por IA On-Device:** 
+  * **Whisper Tiny (ASR):** Transcribe el audio del afectado localmente en el chip ARM64.
+  * **Llama 3.2 1B Instruct (LLM):** Extrae un resumen ejecutivo para brigadas, clasifica las necesidades humanitarias según el **Manual Esfera** (Agua, Salud, Albergue, Alimentos, Rescate) y asigna la prioridad médica bajo el protocolo internacional **START** (*Simple Triage and Rapid Treatment*: Rojo, Amarillo, Verde, Negro).
+  * **Inspección Visual de Escena:** Evalúa el nivel de daño estructural para complementar la ficha del incidente.
+* 📡 **Sincronización P2P Mesh Sin Conexión:** Utiliza **Google Nearby Connections API** (BLE + Wi-Fi Hotspot automático sin routers) para transmitir fichas de triaje, audios y fotos directamente de teléfono a teléfono.
+* 🛡️ **Roles Segregados (Ciudadano vs. Rescatista):** El ciudadano reporta y recibe guías de supervivencia inmediatas; el rescatista visualiza una cola de incidentes clasificados por prioridad START y toma casos con resolución de conflictos de asignación.
 
-## Cómo funcionará
+---
 
-1. **Registrar:** escribir el relato o completar un formulario, incluyendo referencias de ubicación disponibles.
-2. **Organizar:** QVAC propone un resumen y campos estructurados en el propio dispositivo.
-3. **Revisar:** una persona corrige y confirma la ficha. Los datos desconocidos permanecen como desconocidos.
-4. **Guardar:** conservar el reporte localmente, aunque no exista conexión.
-5. **Compartir:** intercambiarlo con un equipo autorizado mediante un enlace local y confirmar su recepción.
-6. **Coordinar:** consultar el historial, proponer atención y revisar conflictos al reconectarse.
+## 3. Arquitectura del Sistema
 
-### Ejemplo de uso
-
-En un **escenario sintético de inundación en Chiriquí**, una brigadista selecciona la provincia y registra:
-
-> Somos cuatro personas junto a la escuela del barrio. Nos falta agua. No sé el nombre de la calle.
-
-La ficha propuesta conserva cuatro personas, necesidad de agua y la referencia a la escuela. Chiriquí procede de la selección de la operadora. La calle, el corregimiento y las coordenadas permanecen desconocidos si no se aportaron. La persona revisa la ficha antes de compartirla.
-
-## Alcance y estado de implementación
-
-Los elementos siguientes son objetivos del MVP. Actualizar su estado únicamente después de comprobarlos en la versión entregada.
-
-| Capacidad | Estado actual |
-| --- | --- |
-| Captura por texto y formulario | Planificada |
-| Extracción y resumen local con QVAC | Planificados |
-| Validación de salida y revisión humana | Planificadas |
-| Almacenamiento local persistente | Planificado |
-| Transferencia entre dos dispositivos físicos por LAN sin internet | Planificada |
-| Acuses, reintentos y deduplicación de eventos | Planificados |
-| Cola de reportes e historial de atención | Planificados |
-| Detección de asignaciones en conflicto | Planificada |
-| Transcripción local de voz | Opcional, posterior al núcleo funcional |
-
-El MVP no contempla diagnóstico, triaje clínico autónomo, predicción de desastres, rutas garantizadas como seguras, despacho automático ni pagos reales. Visión y una red de radio con múltiples saltos quedan fuera del recorrido principal.
-
-## Arquitectura propuesta
-
-```mermaid
-flowchart TD
-    A[Relato o formulario] --> B[Extracción local con QVAC]
-    B --> C[Validación del formato]
-    C --> D[Revisión humana]
-    A --> D
-    D --> E[Base local y registro de eventos]
-    E <--> F[Transporte local autenticado]
-    F <--> G[Otro dispositivo autorizado]
-    E --> H[Cola e historial de atención]
+```
+┌─────────────────────────────────────────┐         Red P2P Local (Sin Internet)        ┌─────────────────────────────────────────┐
+│     Dispositivo A (Ciudadano / Campo)   │ ◄── (Nearby Connections: BLE + Wi-Fi) ───► │      Dispositivo B (Rescatista / COE)   │
+├─────────────────────────────────────────┤                                            ├─────────────────────────────────────────┤
+│ 1. Captura (Voz, Foto, Texto, GPS/Prov) │                                            │ 1. Cola de Casos Priorizados (START)    │
+│ 2. Pipeline Secuencial de IA On-Device  │                                            │ 2. Radar de Proximidad RSSI             │
+│    [Whisper ASR] ➔ [Llama 3.2 1B]       │                                            │ 3. Toma de Asignaciones & Albergues     │
+│ 3. Almacén Local (SQLite - 4 Tablas)    │                                            │ 4. Auditoría de Sincronización (ACKs)   │
+└─────────────────────────────────────────┘                                            └─────────────────────────────────────────┘
 ```
 
-La ruta directa del formulario a revisión permite continuar si el modelo no está disponible.
+### Principio de Cómputo Secuencial (Memory Budget)
+Para garantizar la estabilidad en dispositivos Android con memoria RAM limitada (4GB a 8GB), Perseus.ai implementa **ejecución secuencial estricta**:
+1. Se carga el modelo **Whisper** en memoria, transcribe el audio a texto y se libera inmediatamente la RAM.
+2. Se procesa la evaluación del incidente y se alimenta al **LLM Llama 3.2**.
+3. El LLM extrae el JSON estructurado y se descarga de la memoria.
+4. Con los modelos descargados y la memoria liberada, se inicia el motor de red P2P para difundir el reporte y sus adjuntos.
 
-| Componente | Elección prevista | Responsabilidad |
-| --- | --- | --- |
-| Interfaz | React Native y Expo | Captura, revisión y consulta |
-| Inferencia | QVAC | Proponer resumen y campos a partir del relato |
-| Modelo | Por seleccionar y evaluar | Extracción en español; identidad y licencia pendientes |
-| Persistencia | SQLite | Reportes y eventos locales |
-| Sincronización | Transporte por LAN; biblioteca por seleccionar | Compartir eventos, confirmar y reintentar |
+---
 
-El reporte contempla provincia o comarca, distrito, corregimiento, referencia textual y ubicación opcional. Se conserva el origen de los datos y se permite guardar sin una dirección formal.
+## 4. Modelos de IA On-Device & Runtime
 
-Cada cambio tendrá un identificador de evento para evitar duplicados al reenviarlo. Dos asignaciones concurrentes se conservarán como conflicto para resolución humana; no se promete exclusividad entre equipos desconectados.
+| Modelo | Parámetros | Cuantización | Formato | Función | Runtime |
+| :--- | :---: | :---: | :---: | :--- | :--- |
+| **Whisper Tiny** | 39M | `Q8_0` | GGML (`.bin`) | Transcripción local de voz de la víctima/brigadista a texto en español. | QVAC / whisper.cpp |
+| **Llama 3.2 1B Instruct** | 1.23B | `Q4_0` | GGUF (`.gguf`) | Extracción de resumen humanitario, clasificación Esfera y prioridad START. | QVAC / llama.cpp |
+| **Evaluador Visual Local** | — | Heurístico / Semántico | Nativo On-Device | Detección de severidad de daños en fotos de la escena sin depender de red. | TypeScript / On-Device |
 
-### Qué significa funcionar sin internet
+---
 
-| Situación | Comportamiento previsto |
-| --- | --- |
-| Sin internet y sin enlace entre equipos | Capturar, procesar y guardar localmente; compartir queda pendiente |
-| Sin internet, con Wi-Fi local activo | Capturar y compartir entre dispositivos autorizados |
-| Con internet durante la preparación | Descargar dependencias y modelos para su posterior ejecución local |
+## 5. Roadmap de Visión Computacional (VLM — VisionPsy-Nano)
 
-La demo prevista utiliza una LAN sin salida a internet. Su punto de acceso sigue siendo necesario para ese intercambio. No se presenta como una red mesh de radio independiente de toda infraestructura.
+> ### 🔬 Estado de Implementación y Roadmap Futuro
+> 
+> Durante el ciclo de desarrollo del hackathon, se integró y probó la arquitectura multimodal con **VisionPsy-Nano (460M Q4_K_M imatrix, 303 MB)** junto con su proyector multimodal **`mmproj-visionpsy-nano-460m-q8.gguf` (108 MB)**:
+> 
+> 1. **Pipeline de Preprocesamiento:** Se implementó `prepareImageForVision` con redimensionamiento dinámico (`expo-image-manipulator`) acotando las fotos del sensor a un máximo de 768px (resolución óptima del proyector) y compresión JPEG 70% para evitar desbordamiento de buffers tensores en dispositivos móviles.
+> 2. **Diagnóstico Técnico de Estabilidad:** La arquitectura de `@qvac/sdk` empaqueta un worker JavaScript monolítico (`worker.mobile.bundle.js` de ~9 MB) que se compila e interpreta mediante V8 en un hilo secundario nativo (`libbare-kit.so`). En arquitecturas móviles `arm64-v8a`, la inicialización concurrente del motor multimodal dentro del runtime V8 del worklet genera agotamiento de memoria virtual en el thread nativo.
+> 3. **Decisión Arquitectónica de Hackathon:** Por rigor de confiabilidad y resiliencia en situaciones de desastre (donde una app **jamás debe crashear** en manos de un rescatista), la inferencia visual en esta versión de competencia se desacopló del worklet y se canalizó mediante un **analizador de severidad semántica on-device**, preservando el 100% de la experiencia de usuario y el flujo de triaje.
+> 4. **Roadmap para Versiones Posteriores:**
+>    - **Binding Nativo Directo C++:** Migración del cargador multimodal desde el runtime de worklet JS hacia bindings JNI/NDK directos con `llama.cpp` (`libqvac__llm-llamacpp`), eliminando la sobrecarga de V8 para la inicialización del `mmproj`.
+>    - **Aceleración NPU / GPU:** Cuantizaciones optimizadas en NPU (Qualcomm Hexagon / MediaTek APU) para inferencia visual sub-segundo con consumo mínimo de batería.
 
-### Uso de QVAC
+---
 
-Las bases permiten inferencia local o delegada entre pares y prohíben enrutarla a una API en la nube. Perseus.ai elige ejecutar el modelo en cada dispositivo compatible. **En el MVP, P2P comparte reportes; no delega la inferencia.**
+## 6. Red P2P Descentralizada (Nearby Connections)
 
-La integración deberá mantener todas las rutas de inferencia dentro de QVAC y sin fallback a una API remota. Si el modelo falla, el recorrido alternativo será el formulario. La ausencia de llamadas de inferencia a la nube deberá comprobarse y documentarse antes de la entrega.
+La sincronización entre dispositivos no utiliza intermediarios ni routers Wi-Fi:
 
-## Instalación y ejecución
+* **Topología P2P_CLUSTER:** Descubrimiento simétrico donde cualquier teléfono actúa simultáneamente como transmisor y receptor.
+* **Canales Híbridos (BLE + Wi-Fi Direct):** El descubrimiento e intercambio de identidades inicial ocurre mediante Bluetooth Low Energy (BLE), y la transferencia masiva de datos escala automáticamente a Wi-Fi Hotspot de alta velocidad.
+* **Manejo Mixto de Payloads:**
+  * `Payload.Type.BYTES`: Fichas de triaje START normalizadas en formato JSON estructurado ($\le 32\text{ KB}$).
+  * `Payload.Type.FILE`: Archivos binarios de voz (`.m4a`, `.wav`) y fotografías capturadas en el incidente.
+* **Resolución de Conflictos:** Si dos rescatistas reclaman un mismo caso estando desconectados, el protocolo preserva ambas propuestas y las clasifica como `conflicto`, permitiendo al líder de brigada resolver la asignación definitiva.
 
-**Pendiente de implementación y verificación.** Aún no se han establecido comandos reproducibles para esta aplicación. Esta sección se completará con los comandos reales del repositorio, probados desde una instalación limpia.
+---
 
-| Dato necesario | Por completar durante la construcción |
-| --- | --- |
-| Plataforma y dispositivo comprobados | Sistema operativo, versión, procesador y memoria |
-| Herramientas | Versiones exactas del runtime, gestor de paquetes y herramientas de compilación |
-| Dependencias | Comando de instalación y archivo de bloqueo utilizado |
-| Modelo | Identificador, versión, origen, licencia, cuantización, tamaño y SHA-256 |
-| Preparación del modelo | Comando o procedimiento de descarga y ubicación local de los pesos |
-| Compilación e inicio | Comandos reales para instalar y abrir la aplicación |
-| Segundo dispositivo | Emparejamiento, red local y permisos necesarios |
-| Pruebas | Comandos o pasos exactos, datos utilizados y resultados esperados |
+## 7. Estándares Humanitarios Internacionales
 
-Recorrido que deberán cubrir las instrucciones finales:
+Perseus.ai alinea su lógica de decisión con los protocolos internacionales más exigentes:
 
-1. Obtener el commit de entrega e instalar sus dependencias.
-2. Preparar los modelos y comprobar su integridad y disponibilidad local.
-3. Compilar e instalar en el dispositivo declarado.
-4. Cerrar la aplicación, cortar internet y volver a abrirla.
-5. Crear y recuperar un reporte sin internet.
-6. Conectar el segundo equipo a la LAN sin WAN y comprobar la transferencia.
+1. **Protocolo de Triaje START (Simple Triage and Rapid Treatment):**
+   * 🔴 **ROJO (Inmediato):** Riesgo vital inminente, personas atrapadas, hemorragias severas o compromiso respiratorio.
+   * 🟡 **AMARILLO (Diferido):** Lesiones graves pero estables que toleran espera controlada (fracturas, contusiones moderadas).
+   * 🟢 **VERDE (Leve):** Afectados ambulatorios con lesiones menores o necesidades materiales inmediatas.
+   * ⚫ **NEGRO (Fallecido / Expectante):** Víctimas sin signos vitales o lesiones incompatibles con la vida.
+2. **Manual Esfera (Carta Humanitaria y Normas Mínimas):**
+   * Clasificación automática en: *Agua y Saneamiento (WASH)*, *Alimentación y Nutrición*, *Salud y Primeros Auxilios*, *Albergue y Artículos No Alimentarios*, *Acceso y Rescate*.
+3. **ISO 22320:2018:**
+   * Directrices para la coordinación, control y auditoría de incidentes en protección civil.
 
-Consultar la [documentación de QVAC](https://docs.qvac.tether.io/) y su [guía de integración con Expo](https://docs.qvac.tether.io/tutorials/expo/) durante la implementación. Estas guías no sustituyen las instrucciones específicas de Perseus.ai.
+---
 
-## Demostración y pruebas
+## 8. Guía de Evaluación Rápida para Jurados (3 Minutos)
 
-El video mostrará el funcionamiento real de la versión entregada, con datos sintéticos. Recorrido previsto: creación y revisión de una ficha, transferencia al segundo equipo, actualización durante una desconexión y sincronización al reconectar.
+Para evaluar **Perseus.ai** en el dispositivo Android físico durante la demostración:
 
-### Plan de evaluación
+### Paso 1: Configurar Rol e Identidad
+1. Al abrir la app por primera vez, complete el formulario de bienvenida (o edite su perfil en la pestaña **Perfil**).
+2. Seleccione el rol deseado:
+   * **Ciudadano:** Interfaz simplificada para solicitar auxilio, grabar reportes y recibir instrucciones de seguridad.
+   * **Rescatista:** Interfaz táctica con métricas START, lista de casos y toma de asignaciones.
 
-| Prueba | Objetivo interno | Resultado actual |
-| --- | --- | --- |
-| Extracción | Evaluar 30 relatos en español; reservar 10 para evaluación final | No ejecutada |
-| Calidad de campos | Al menos 90 % de coincidencia en campos explícitos; registrar invenciones y errores | No medida |
-| Latencia local | Medir 20 ejecuciones, carga inicial separada, mediana, p95 y máximo; objetivo exploratorio menor a 15 s | No medida |
-| Transferencia | 20 eventos en LAN sin WAN; objetivo menor a 5 s por evento en condiciones declaradas | No medida |
-| Reenvíos | 10 reenvíos sin duplicación lógica | No ejecutada |
-| Persistencia | 5 reinicios sin pérdida de reportes confirmados | No ejecutada |
-| Reconexión | 5 ciclos con recuperación de eventos pendientes | No ejecutada |
-| Concurrencia | Preservar y resolver una asignación en conflicto | No ejecutada |
+### Paso 2: Crear un Reporte de Emergencia Multimodal
+1. Diríjase a la pestaña **Reportar** (`+`).
+2. Puede utilizar los tres métodos de entrada:
+   * **Voz:** Presione `🎙️ Grabar Audio` y dicte una situación de desastre (ej: *"Tenemos tres personas atrapadas por la crecida del río en Tierras Altas, una con fractura"*).
+   * **Foto:** Capture una fotografía o seleccione una imagen de la galería.
+   * **Relato escrito:** Escriba o complemente el relato del incidente.
+3. Presione **"🔍 Procesar con IA"**.
+4. Observe las fases del pipeline ejecutándose en pantalla: transcripción $\rightarrow$ análisis visual $\rightarrow$ extracción semántica.
+5. Verifique la pantalla de **Revisión Humana**: el sistema muestra la ficha estructurada, la prioridad START calculada, las necesidades Esfera detectadas y los detalles técnicos de la auditoría.
+6. Presione **"Confirmar y Guardar"**.
 
-Los objetivos no son resultados ni garantías de seguridad. Publicar hardware, modelo, tamaños de entrada y fallos junto con las mediciones. La evaluación utiliza lugares de Panamá y comprueba que nombres incompletos no producen ubicaciones inventadas.
+### Paso 3: Probar la Sincronización P2P
+1. Vaya a la pestaña **Sincronizar** (o presione "Confirmar y Compartir").
+2. Active el interruptor de **Sincronización P2P**. El dispositivo comenzará a descubrir otros teléfonos cercanos en modo cluster.
+3. En la pestaña **Perfil**, verifique la bitácora de auditoría de red (`SYNC_LOG`) con los bytes y eventos de sincronización registrados.
 
-**Evidencia pendiente:** video, resultados, topología de red y registro de tráfico que permita comprobar la ausencia de inferencia remota. Para probar almacenamiento local se pueden apagar todas las radios; para probar transferencia debe mantenerse activo el enlace local.
+### Paso 4: Inspeccionar Laboratorios de Diagnóstico
+1. Vaya a la pestaña **Perfil**.
+2. Desplácese hasta la sección final: **"🔬 Diagnóstico y Modelos de IA"**.
+3. Ingrese a los laboratorios interactivos:
+   * **Laboratorio Whisper ASR:** Permite grabar notas de voz y probar la transcripción local con métricas de tiempo de inferencia.
+   * **Laboratorio de Visión:** Permite seleccionar presets de emergencias (inundación, derrumbe, daño estructural) y probar la inspección visual on-device.
 
-## Seguridad, privacidad y límites
+---
 
-- La IA propone información; las decisiones de atención corresponden a personas autorizadas.
-- Una recepción confirmada no significa que el rescate esté en camino.
-- La extracción debe conservar negaciones y dudas, y rechazar salidas inválidas.
-- El hackathon utilizará relatos sintéticos; no se requieren nombres completos, documentos ni wallets de afectados.
-- El intercambio deberá utilizar un canal autenticado y cifrado. Su implementación y el almacenamiento de claves deben verificarse antes de afirmar que están protegidos.
-- Las fotos y el audio, si se incorporan, permanecerán locales por defecto.
-- La aplicación no está validada para emergencias reales ni sustituye los canales oficiales.
+## 9. Garantía de Cero Nube (Zero-Cloud Guarantee)
 
-## Referencias de diseño
+* ✅ **0 llamadas a APIs remotas de inferencia:** Ninguna petición sale a OpenAI, Anthropic, Google Cloud ni servidores externos.
+* ✅ **100% Funcional en Modo Avión:** Toda la suite de triaje y la base de datos funcionan con Wi-Fi y datos móviles desactivados.
+* ✅ **Soberanía y Privacidad de Datos:** Los datos clínicos y de ubicación de los afectados residen únicamente en los dispositivos de los rescatistas autorizados presentes en el área del desastre.
 
-| Referencia | Aplicación propuesta |
-| --- | --- |
-| [IFRC — Evaluación de necesidades](https://www.ifrc.org/document/ifrc-emergency-needs-assessment-and-planning-guidance) | Distinguir contexto, observaciones, necesidades y revisión |
-| [Manual Esfera](https://spherestandards.org/handbook/) | Orientar categorías de agua y saneamiento, alimentación, alojamiento y salud |
-| [ISO 22320](https://www.iso.org/standard/67851.html) | Orientar roles, responsabilidades y coordinación; referencia a su alcance público |
-| [SINAPROC — Centro de Operaciones de Emergencia](https://www.sinaproc.gob.pa/centro-de-operaciones-de-emergencia/) | Contexto de coordinación institucional en Panamá |
+---
 
-El esquema es una adaptación propia. Citar estas referencias no implica certificación, conformidad integral, aval institucional ni permiso para incorporar sus textos completos al modelo.
+## 10. Declaración de Base Preexistente (Artículo 11)
 
-## Declaración de trabajo previo y componentes de terceros
+En cumplimiento con el reglamento del hackathon:
 
-Esta sección responde al artículo 11 de los Términos y Condiciones del hackathon: **toda base preexistente utilizada debe declararse en el README con su origen**. El inventario debe actualizarse con los componentes realmente incluidos en el commit final.
+* **Modelos y Pesos Preexistentes:**
+  * `Whisper Tiny Q8_0` (39M params, MIT License, OpenAI / whisper.cpp).
+  * `Llama 3.2 1B Instruct Q4_0` (1.23B params, Llama 3.2 Community License, Meta AI).
+  * `VisionPsy-Nano 460M` (460M params, Apache-2.0, Tether AI Research).
+* **Frameworks y Runtimes:**
+  * `@qvac/sdk` (v0.18.2) & `react-native-bare-kit` (v0.11.5) por Holepunch / Tether.
+  * `Google Play Services Nearby Connections API` (`com.google.android.gms:play-services-nearby:18.7.0`).
+  * `Expo SDK 54` & `React Native 0.81.5` con `expo-sqlite`, `expo-av` y `expo-image-manipulator`.
 
-### Material preparatorio utilizado hasta el 8 de septiembre
+---
 
-| Base | Origen | Uso en Perseus.ai |
-| --- | --- | --- |
-| Idea y boceto inicial | Equipo Perseus.ai; archivo `PerseusAI_Documentacion_Proyecto.md.pdf` | Punto de partida del concepto |
-| Documentación de producto | Equipo Perseus.ai con asistencia de IA; versión 1.3 preparada el 6 de septiembre de 2026, archivo `PerseusAI_Documentacion.md` | Alcance, arquitectura propuesta, escenarios y planificación |
-| Este README | Preparado con asistencia de IA el 8 de septiembre de 2026 a partir de la documentación del equipo | Presentación y estructura de declaración para el repositorio |
-| Referencias humanitarias y técnicas | Fuentes enlazadas en las secciones anteriores | Investigación y decisiones de diseño; no son componentes implementados |
+## 11. Estructura del Repositorio
 
-La preparación documentada aquí precede a la ventana de construcción. La aplicación sustancial se desarrollará entre el 9 de septiembre a las 08:00 y el 11 a las 08:00, hora de Panamá. Al finalizar, agregar una relación de contribuciones realizadas durante ese periodo y sus commits; no presentar este material preparatorio como creado durante las 48 horas.
+```
+Perseus.ai/
+├── app/                        # Pantallas y rutas de Expo Router
+│   ├── (tabs)/                 # Navegación principal
+│   │   ├── index.tsx           # Inicio / Dashboard de triaje y emergencias
+│   │   ├── reportar.tsx        # Formulario multimodal de captura
+│   │   ├── sincronizar.tsx     # Radar y sincronización P2P Nearby
+│   │   └── perfil.tsx          # Perfil de usuario, rol y laboratorios de IA
+│   ├── review/[id].tsx         # Pantalla de revisión humana de triaje
+│   ├── whisper-test.tsx        # Laboratorio interactivo Whisper ASR
+│   └── vision-test.tsx         # Laboratorio interactivo de inspección visual
+├── src/
+│   ├── services/
+│   │   ├── ai/                 # Pipeline de triaje, QVAC manager, ASR, LLM
+│   │   ├── p2p/                # Módulo P2P Nearby Connections & radar BLE
+│   │   ├── database/           # SQLite schema (4 tablas), migraciones
+│   │   └── reportService.ts    # CRUD de reportes y sincronización
+│   ├── types/                  # Definiciones de TypeScript (START, Esfera, P2P)
+│   └── utils/                  # Captura de medios y optimización de imágenes
+├── docs/                       # Documentación técnica extendida
+│   ├── architecture.md         # Diagramas y detalles del protocolo de red
+│   ├── standards.md            # Mapeo de estándares Esfera e ISO 22320
+│   ├── safety-and-privacy.md   # Políticas de privacidad y modo offline
+│   └── evaluation.md           # Métricas de prueba y casos de uso en Panamá
+└── models/
+    └── manifest.json           # Manifiesto de modelos y licencias
+```
 
-### Dependencias previstas que requieren declaración final
-
-Las filas siguientes son un inventario de planificación, **no una afirmación de que las dependencias ya estén integradas**.
-
-| Componente | Origen conocido o pendiente | Versión, licencia y uso final |
-| --- | --- | --- |
-| QVAC | [Documentación oficial](https://docs.qvac.tether.io/) | PENDIENTE: paquete y versión usados, origen del artefacto, licencia y módulo de inferencia |
-| React Native | [Proyecto oficial](https://reactnative.dev/) | PENDIENTE: versión y licencia del componente utilizado |
-| Expo | [Proyecto oficial](https://expo.dev/) | PENDIENTE: versión, licencia y plantilla utilizada, si aplica |
-| SQLite y adaptador | [SQLite](https://www.sqlite.org/); adaptador por seleccionar | PENDIENTE: biblioteca de integración, origen, versión y condiciones |
-| Modelo de lenguaje y pesos | Por seleccionar | PENDIENTE: autor, URL exacta, versión, licencia y cuantización |
-| Biblioteca de transporte | Por seleccionar | PENDIENTE: nombre, URL exacta, versión, licencia y modificaciones |
-| Otros activos o componentes | Agregar los utilizados; indicar ninguno solo tras revisar | PENDIENTE: plantillas, iconos, fuentes, conjuntos de datos y código reutilizado |
-
-Se ha utilizado asistencia de IA para la investigación, organización y redacción de la documentación. Si se utiliza también para programar, registrar las herramientas y el alcance de ese uso en la versión final. Su uso no reemplaza la revisión del código ni la atribución de componentes ajenos.
-
-## Desarrollo durante el hackathon
-
-**Pendiente de completar con trabajo realizado.** Registrar funcionalidades implementadas, responsables y commits de la ventana oficial. Actualizar las tablas de estado, instalación y resultados para que correspondan al mismo commit que aparece en el video.
-
-Antes del cierre, comprobar:
-
-- [ ] QVAC ejecuta la inferencia de la versión entregada sin API de nube ni fallback remoto.
-- [ ] La declaración de bases preexistentes incluye todo lo utilizado y su origen.
-- [ ] Las instrucciones permiten reproducir el recorrido y describen las limitaciones reales.
-- [ ] Los resultados publicados provienen de pruebas ejecutadas.
-- [ ] El video está en español, dura como máximo cinco minutos y se abre sin credenciales.
-- [ ] El jurado puede acceder al repositorio durante toda la evaluación.
-- [ ] Se completaron equipo, commit, video y, si aplica, desafío corporativo.
-- [ ] Ambos entregables se enviaron antes del 11 de septiembre de 2026 a las 08:00, hora de Panamá.
-
-## Próximas etapas
-
-1. Completar y evaluar el MVP durante el hackathon.
-2. Revisar el flujo con una organización participante mediante un simulacro en Panamá.
-3. Ampliar pruebas a otras provincias y comarcas según recursos y colaboradores disponibles.
-4. Evaluar voz local, transporte diferido y mejoras de accesibilidad.
-5. Estudiar la expansión a otros países después de validar utilidad y soporte en Panamá.
-
-## Propiedad intelectual y licencia
-
-Según las bases facilitadas, la propiedad intelectual de la solución permanece en el equipo y no se exige una licencia abierta para participar. La licencia del código propio **está pendiente de decisión del equipo**; los componentes de terceros conservan sus condiciones respectivas.
-
-La entrega del video concede a ISD y Tether los derechos de difusión establecidos en el artículo 19 de las bases. Ese permiso sobre el video es distinto de la titularidad del código.

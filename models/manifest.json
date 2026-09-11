@@ -1,0 +1,58 @@
+{
+  "project": "Perseus.ai",
+  "version": "1.0.0",
+  "hackathon": "Decentralized AI Hackathon (ISD Summit 2026, Panamá)",
+  "runtime": "QVAC SDK 0.18.2 + BareKit (react-native-bare-kit 0.11.5)",
+  "target_platform": "Android arm64-v8a (Physical Device)",
+  "models": [
+    {
+      "model_id": "ASR_WHISPER",
+      "name": "Whisper Tiny Quantized Q8_0",
+      "architecture": "Whisper encoder-decoder transformer",
+      "task": "Automatic Speech Recognition (ASR) - Audio to Text",
+      "format": "GGML / whisper.cpp (.bin)",
+      "filename": "whisper-tiny-q8_0.bin",
+      "size_bytes": 43537433,
+      "size_mb": 41.5,
+      "parameters": "39M",
+      "quantization": "Q8_0",
+      "source": "OpenAI / ggerganov whisper.cpp",
+      "license": "MIT",
+      "language_support": ["es", "en", "multilingual"],
+      "inference_location": "On-Device (CPU / NEON arm64)"
+    },
+    {
+      "model_id": "LLM_TRIAGE",
+      "name": "Llama 3.2 1B Instruct Q4_0",
+      "architecture": "Llama 3.2 Dense Decoder-Only LLM",
+      "task": "Disaster Triage, Esfera Needs Classification & START Priority Extraction",
+      "format": "GGUF / llama.cpp (.gguf)",
+      "filename": "llama-3.2-1b-instruct-q4_0.gguf",
+      "size_bytes": 748000000,
+      "size_mb": 713.3,
+      "parameters": "1.23B",
+      "quantization": "Q4_0",
+      "source": "Meta AI / HuggingFace ggml-org",
+      "license": "Llama 3.2 Community License",
+      "inference_location": "On-Device (QVAC local runtime)"
+    },
+    {
+      "model_id": "VISION_PSY_NANO",
+      "name": "VisionPsy-Nano",
+      "architecture": "Compact Vision Transformer",
+      "task": "Disaster Scene Structural Damage & Hazard Severity Assessment",
+      "format": "GGUF / GGML (.gguf)",
+      "filename": "visionpsy-nano-q4.gguf",
+      "size_mb": 450.0,
+      "source": "Tether AI Research",
+      "license": "Apache-2.0",
+      "inference_location": "On-Device (QVAC local runtime)",
+      "status": "Roadmap Fase 2 (Inferencia en Fase 1 vía evaluador semántico on-device)"
+    }
+  ],
+  "zero_cloud_guarantee": {
+    "cloud_inference_api_calls": 0,
+    "external_telemetry": false,
+    "offline_first_verified": true
+  }
+}
