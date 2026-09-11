@@ -25,3 +25,5 @@ Thumbs.db
 # Models & binaries (large files)
 *.gguf
 *.bin
+bugreport-*.zip
+

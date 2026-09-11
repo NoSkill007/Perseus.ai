@@ -46,7 +46,8 @@
       "size_mb": 450.0,
       "source": "Tether AI Research",
       "license": "Apache-2.0",
-      "inference_location": "On-Device (QVAC local runtime)"
+      "inference_location": "On-Device (QVAC local runtime)",
+      "status": "Roadmap Fase 2 (Inferencia en Fase 1 vía evaluador semántico on-device)"
     }
   ],
   "zero_cloud_guarantee": {

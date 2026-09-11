@@ -89,8 +89,38 @@ erDiagram
 
 ## 3. Protocolo de Sincronización y Transporte P2P
 
-1. **Descubrimiento y Emparejamiento:** Comunicación directa entre pares mediante socket local sin salida a internet (LAN aislada / WiFi Direct / BLE).
+1. **Descubrimiento y Emparejamiento:** Comunicación directa entre pares mediante Google Nearby Connections API (`P2P_CLUSTER`) sobre BLE y Wi-Fi Direct/Hotspot sin conexión a internet ni routers intermediarios.
 2. **Estructura de Paquetes (`P2PPacket`):** Formato JSON plano con cabeceras de versión, emisor, tipo (`REPORT_SYNC`, `ACK_REPORT`, `ASSIGNMENT_CLAIM`, `NODE_BEACON`), payload y timestamp.
-3. **Deduplicación Estricta:** Uso de `report_id` y `assignment_id` únicos. El reenvío de paquetes conocidos se descarta silenciosamente o confirma sin duplicar registros.
-4. **Manejo de Conflictos:** Si dos brigadas reclaman el mismo caso de forma concurrente mientras estaban desconectadas, el sistema marca el estado en `conflicto`, preserva ambas propuestas y permite al coordinador resolver la asignación definitiva.
-5. **Auditoría para el Jurado (`sync_log`):** Cada transmisión registra dirección, bytes y transporte como prueba visual demostrable de transferencia offline.
+3. **Payloads Mixtos:**
+   - `Payload.Type.BYTES`: Fichas estructuradas de triaje y metadatos clínicos ($\le 32\text{ KB}$).
+   - `Payload.Type.FILE`: Archivos binarios de voz y fotografías de incidentes transmitidos punto a punto.
+4. **Deduplicación Estricta:** Uso de `report_id` y `assignment_id` únicos. El reenvío de paquetes conocidos se descarta silenciosamente o confirma sin duplicar registros.
+5. **Manejo de Conflictos:** Si dos brigadas reclaman el mismo caso de forma concurrente mientras estaban desconectadas, el sistema marca el estado en `conflicto`, preserva ambas propuestas y permite al coordinador resolver la asignación definitiva.
+6. **Auditoría para el Jurado (`sync_log`):** Cada transmisión registra dirección, bytes y transporte como prueba visual demostrable de transferencia offline.
+
+---
+
+## 4. Pipeline de Inferencia de IA On-Device
+
+```mermaid
+flowchart TD
+    A[Captura de Emergencia: Voz / Foto / Texto] --> B[Fase 1: Transcripción de Audio]
+    B -->|Whisper Tiny Q8_0 - GGML| C[Texto Transcrito en Español]
+    C --> D[Liberación de Memoria RAM ASR]
+    D --> E[Fase 2: Evaluación Visual de la Escena]
+    E -->|Evaluador Semántico On-Device| F[Severidad y Daño Estructural]
+    F --> G[Fase 3: Extracción y Triaje con LLM]
+    G -->|Llama 3.2 1B Instruct Q4_0 - GGUF| H[Ficha Estructurada START + Esfera]
+    H --> I[Descarga de RAM del LLM]
+    I --> J[Revisión Humana y Confirmación]
+    J --> K[Persistencia SQLite + Difusión P2P]
+```
+
+---
+
+## 5. Roadmap de Ingeniería para Visión Computacional (VLM)
+
+* **Implementación Actual (Fase 1 - Hackathon):** Evaluación visual heurística y semántica on-device para garantizar 0 crashes y 100% de confiabilidad operativa durante rescates.
+* **Preprocesamiento Diseñado:** `prepareImageForVision` con escala a 768px máx y compresión JPEG 70% para acotar los requerimientos de tensores visuales.
+* **Fase 2 (Post-Hackathon):** Integración del proyector multimodal `mmproj-visionpsy-nano-460m-q8.gguf` con `visionpsy-nano-460m-q4_k_m-imat.gguf` mediante bindings C++ nativos directos (JNI/NDK) en `llama.cpp`, eliminando la intermediación de V8 JavaScript Worklet para lograr inferencia multimodal sub-segundo en chipsets ARM64.
+
