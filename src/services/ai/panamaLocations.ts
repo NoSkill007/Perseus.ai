@@ -156,6 +156,11 @@ export function detectPanamaLocation(text: string, defaultProvince?: string): De
     // Regex de palabra completa
     const regex = new RegExp(`\\b${key}\\b`, 'i');
     if (regex.test(cleanText)) {
+      // Si se especificó una provincia oficial, no permitir que menciones de otra provincia la sobreescriban
+      if (defaultProvince && data.province && data.province.toLowerCase() !== defaultProvince.toLowerCase()) {
+        continue;
+      }
+
       const corregimientoName = key.charAt(0).toUpperCase() + key.slice(1);
       const districtStr = data.district ? `, Distrito de ${data.district}` : '';
       const provinceStr = data.province ? `, ${data.province}` : '';

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { runTriagePipeline } from '../triagePipeline';
+import { analyzeImageLocally, analyzeImageDetailed, DEFAULT_GENERIC_VISION_FALLBACK } from '../visionAnalyzer';
 import { StartPriority, DisasterNeedCategory } from '../../../types/triageTypes';
 
 describe('Perseus AI - Local Triage Pipeline (Persona B)', () => {
@@ -113,6 +114,60 @@ describe('Perseus AI - Local Triage Pipeline (Persona B)', () => {
     expect(result.triagePriority).toBe('ROJO');
     expect(result.needs).toContain('ACCESO_RESCATE');
     expect(result.needs).toContain('SALUD');
+  });
+
+  it('debe respetar estrictamente la ubicación y cantidad de personas fijadas en el formulario sin permitir que el razonamiento de la IA las modifique', async () => {
+    const input = {
+      // El relato intenta confundir diciendo "estoy solo" (1 persona) y mencionando "San Francisco" (Panamá)
+      textRelato: 'Estoy solo atrapado bajo los escombros cerca de San Francisco, no puedo moverme.',
+      province: 'Chiriquí',
+      district: 'David',
+      corregimiento: 'San Pablo',
+      reportedPeopleCount: 3, // El formulario definió 3 personas oficialmente
+      operatorDeviceId: 'UNIT-TEST-DEVICE-08',
+    };
+
+    const result = await runTriagePipeline(input);
+
+    // La cantidad de personas y la ubicación del formulario son INMUTABLES
+    expect(result.reportedPeopleCount).toBe(3);
+    expect(result.locationReference).toBe('San Pablo, David, Chiriquí');
+    expect(result.executiveSummary).toContain('3 personas');
+    expect(result.executiveSummary).toContain('San Pablo, David, Chiriquí');
+    expect(result.executiveSummary).not.toContain('San Francisco, Distrito de Panamá');
+  });
+
+  it('debe retornar mensaje genérico de fallback en analyzeImageLocally ante cualquier error o URI vacía sin cerrar la app', async () => {
+    // Caso 1: URI vacía
+    const resultEmpty = await analyzeImageLocally({ imageUri: '' });
+    expect(resultEmpty).toBe(DEFAULT_GENERIC_VISION_FALLBACK);
+
+    // Caso 2: Objeto detallado ante error o imagen sin datos
+    const detailedFallback = await analyzeImageDetailed({ imageUri: '' });
+    expect(detailedFallback.description).toBe(DEFAULT_GENERIC_VISION_FALLBACK);
+    expect(detailedFallback.structuralDamage).toBe('Moderado');
+    expect(detailedFallback.suggestedPriority).toBe('AMARILLO');
+    expect(detailedFallback.isLocalInference).toBe(true);
+  });
+
+  it('debe ejecutar el pipeline completo con imagen problemática retornando el mensaje genérico de visión en vez de cerrar la aplicación', async () => {
+    const input = {
+      textRelato: 'Tenemos una casa afectada por lluvia en Boquete.',
+      imageUri: 'file:///invalid/corrupted/path/not_found.jpg',
+      province: 'Chiriquí',
+      district: 'Boquete',
+      reportedPeopleCount: 2,
+    };
+
+    // No debe lanzar excepción ni colapsar
+    const result = await runTriagePipeline(input);
+
+    expect(result.reportId).toBeDefined();
+    expect(result.visionSeverity).toBe(DEFAULT_GENERIC_VISION_FALLBACK);
+    expect(result.visualTriageAnalysis).toBe(DEFAULT_GENERIC_VISION_FALLBACK);
+    expect(result.isLocalInference).toBe(true);
+    expect(result.reportedPeopleCount).toBe(2);
+    expect(result.locationReference).toBe('Boquete, Chiriquí');
   });
 });
 

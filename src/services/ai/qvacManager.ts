@@ -36,28 +36,28 @@ const baseDocDir = (FileSystem && FileSystem.documentDirectory) ? FileSystem.doc
 
 export const MODEL_REGISTRY: Record<string, ModelAssetConfig> = {
   ASR_WHISPER: {
-    id: 'ASR_WHISPER',
+    id: 'WHISPER_TINY_Q8_0',
     filename: 'whisper-tiny-q8_0.bin',
     localPath: `${baseDocDir}models/whisper-tiny-q8_0.bin`,
     modelType: 'asr',
     quantization: 'Q8_0',
   },
   VISION_PSY: {
-    id: 'VISION_PSY',
-    filename: 'visionpsy-nano-460m-flash-iq3_xxs-imat.gguf',
-    localPath: `${baseDocDir}models/visionpsy-nano-460m-flash-iq3_xxs-imat.gguf`,
+    id: 'VISIONPSY_NANO_460M_MULTIMODAL_Q4_K_M_1',
+    filename: 'visionpsy-nano-460m-q4_k_m-imat.gguf',
+    localPath: `${baseDocDir}models/visionpsy-nano-460m-q4_k_m-imat.gguf`,
     modelType: 'vision',
-    quantization: 'IQ3_XXS',
+    quantization: 'Q4_K_M',
   },
   VISION_MMPROJ: {
-    id: 'VISION_MMPROJ',
-    filename: 'mmproj-visionpsy-nano-460m-flash-q8.gguf',
-    localPath: `${baseDocDir}models/mmproj-visionpsy-nano-460m-flash-q8.gguf`,
+    id: 'MMPROJ_VISIONPSY_NANO_460M_MULTIMODAL_Q8_0_1',
+    filename: 'mmproj-visionpsy-nano-460m-q8.gguf',
+    localPath: `${baseDocDir}models/mmproj-visionpsy-nano-460m-q8.gguf`,
     modelType: 'vision_proj',
     quantization: 'Q8_0',
   },
   LLM_TRIAGE: {
-    id: 'LLM_TRIAGE',
+    id: 'LLAMA_3_2_1B_INST_Q4_0',
     filename: 'llama-3.2-1b-instruct-q4_0.gguf',
     localPath: `${baseDocDir}models/llama-3.2-1b-instruct-q4_0.gguf`,
     modelType: 'llm',
@@ -165,6 +165,7 @@ class QvacManager {
       const candidateFilenames = [config.filename];
       if (modelId === 'VISION_PSY') {
         candidateFilenames.push(
+          'visionpsy-nano-460m-q4_k_m-imat.gguf',
           'visionpsy-nano-460m-flash-iq3_xxs-imat.gguf',
           'visionpsy-nano-460m-flash-q4_0.gguf',
           'visionpsy-nano-460m-q4_0.gguf',
@@ -262,10 +263,10 @@ class QvacManager {
         console.log(`[QVAC Manager] Archivo ${config.filename} no presente en disco local. Usando motor semántico on-device.`);
       }
 
-      // ASR_WHISPER: Aislar completamente de BareKit worklet para prevenir Fatal signal 6 (SIGABRT)
-      // en arquitecturas Android ARM64 donde el bundle de 10MB genera abort nativo
-      if (modelId === 'ASR_WHISPER') {
-        console.log('[QVAC Manager] ASR_WHISPER preparado con seguridad on-device (aislado de BareKit).');
+      // ASR_WHISPER y VISION_PSY: Aislados de BareKit worklet para prevenir Fatal signal 6 (SIGABRT)
+      // en arquitecturas Android ARM64 donde el bundle gigante de JS genera abort nativo
+      if (modelId === 'ASR_WHISPER' || modelId === 'VISION_PSY') {
+        console.log(`[QVAC Manager] ${modelId} preparado con seguridad on-device (aislado de BareKit).`);
         this.currentLoadedModelId = modelId;
         return true;
       }
@@ -297,15 +298,6 @@ class QvacManager {
             } catch {}
           }
         }
-
-        // VISION_PSY: Aislar de BareKit worklet para prevenir Fatal signal 6 (SIGABRT)
-        // por fallo de dlopen en libbare-performance en Android ARM64
-        console.log(`[QVAC Manager] VISION_PSY verificado y listo en memoria interna (${resolvedPath} + ${mmprojResolvedPath || 'mmproj'}).`);
-        this.nativeModelIds[modelId] = 'VISION_PSY_NANO_FLASH';
-        this.isNativeLoaded = true;
-        this.currentLoadedModelId = modelId;
-        this.lastErrors[modelId] = '';
-        return true;
       }
 
       const sdk = this.getSdk();
@@ -331,13 +323,14 @@ class QvacManager {
                 device: 'cpu',
                 gpu_layers: 0,
                 ctx_size: 1024,
+                image_no_upscale: 'on',
               };
 
           if (modelId === 'VISION_PSY' && mmprojResolvedPath) {
             modelConfig.projectionModelSrc = mmprojResolvedPath;
           }
 
-          console.log(`[QVAC Manager] Invocando sdk.loadModel para ${modelId} con path: ${cleanModelPath}...`);
+          console.log(`[QVAC Manager] Invocando sdk.loadModel para ${modelId} (descriptor: ${descriptor ? descriptor.name : 'NO_DESCRIPTOR'}, path: ${cleanModelPath})...`);
           console.log('[QVAC Manager] Configuración enviada:', JSON.stringify(modelConfig));
           
           let instanceId: any = null;

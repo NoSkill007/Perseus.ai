@@ -10,6 +10,8 @@ export interface ExtractTriageOptions {
   province?: string;
   district?: string;
   corregimiento?: string;
+  /** Cantidad de personas afectadas ingresada en el formulario (fija e inmutable) */
+  reportedPeopleCount?: number;
 }
 
 export interface ExtractedTriagePayload {
@@ -50,7 +52,12 @@ REGLAS DE EVALUACIÓN CLÍNICA Y DE TRIAJE (START + ESFERA):
    - Si falta AGUA o SANEAMIENTO: DEBE incluir ["AGUA_SANEAMIENTO"].
    - Si falta COMIDA o VÍVERES: DEBE incluir ["ALIMENTACION"].
 
-5. Ubicación: Detecta corregimientos y distritos de Panamá (ej. Calidonia, Bella Vista, David, Boquete, Changuinola, Santiago, etc.) y referencias textuales (ej. "edificio en Calidonia, Panamá"). Jamás inventes coordenadas GPS.
+5. REGLA ESTRICTA DE UBICACIÓN Y PERSONAS (DATOS FIJOS DEL FORMULARIO):
+   - La cantidad de personas afectadas y la ubicación (Provincia, Distrito, Corregimiento) definidas en el formulario son DATOS OFICIALES Y FIJOS.
+   - La IA tiene ESTRICTAMENTE PROHIBIDO alterar, modificar, deducir o cambiar la cantidad de personas o la ubicación en base a su razonamiento o lo que escuche en audios/relatos.
+   - "reportedPeopleCount": DEBE coincidir con la cantidad fijada en el formulario (si fue provista).
+   - "locationReference": DEBE coincidir con la ubicación fijada en el formulario.
+   - Jamás inventes coordenadas GPS.
 
 FORMATO JSON DE RESPUESTA:
 {
@@ -72,7 +79,16 @@ FORMATO JSON DE RESPUESTA:
 export async function extractTriageWithLLM(
   options: ExtractTriageOptions
 ): Promise<ExtractedTriagePayload> {
-  const { relatoText, transcriptText, visionText, manualInjuries, province, district, corregimiento } = options;
+  const {
+    relatoText,
+    transcriptText,
+    visionText,
+    manualInjuries,
+    province,
+    district,
+    corregimiento,
+    reportedPeopleCount,
+  } = options;
 
   console.log('[TriageExtractor] Cargando LLAMA_3_2_1B_INST_Q4_0 en RAM...');
 
@@ -80,17 +96,37 @@ export async function extractTriageWithLLM(
   const loaded = await qvacManager.loadModel('LLM_TRIAGE');
   if (!loaded) {
     console.warn('[TriageExtractor] No se pudo cargar el LLM de triaje. Usando extractor semántico determinista.');
-    return fallbackExtraction(relatoText, transcriptText, visionText, manualInjuries, province);
+    return fallbackExtraction(
+      relatoText,
+      transcriptText,
+      visionText,
+      manualInjuries,
+      province,
+      district,
+      corregimiento,
+      reportedPeopleCount
+    );
   }
+
+  // Formatear ubicación fija
+  const formLocationParts = [corregimiento, district, province]
+    .map((s) => (s ? s.trim() : ''))
+    .filter((s) => s.length > 0);
+  const formLocation = formLocationParts.length > 0 ? formLocationParts.join(', ') : undefined;
 
   // 2. Construir prompt completo
   let contextText = `Relato escrito: "${relatoText || 'N/A'}"\n`;
   if (manualInjuries) contextText += `Síntomas/Heridas reportadas manualmente: "${manualInjuries}"\n`;
   if (transcriptText) contextText += `Transcripción de audio: "${transcriptText}"\n`;
   if (visionText) contextText += `Análisis visual de foto: "${visionText}"\n`;
-  if (province) contextText += `Provincia/Comarca: ${province}\n`;
-  if (district) contextText += `Distrito: ${district}\n`;
-  if (corregimiento) contextText += `Corregimiento/Ref: ${corregimiento}\n`;
+  if (formLocation) {
+    contextText += `Ubicación FIJA Y OFICIAL del Formulario: "${formLocation}" (NO MODIFICAR NI ALTERAR)\n`;
+  } else if (province) {
+    contextText += `Provincia/Comarca: ${province}\n`;
+  }
+  if (typeof reportedPeopleCount === 'number' && reportedPeopleCount > 0) {
+    contextText += `Cantidad FIJA Y OFICIAL de Personas Afectadas: ${reportedPeopleCount} personas (NO MODIFICAR NI ALTERAR)\n`;
+  }
 
   const fullPrompt = `${SYSTEM_PROMPT}\n\n[CONTEXTO DE LA EMERGENCIA]\n${contextText}\n\nJSON:`;
 
@@ -122,20 +158,47 @@ export async function extractTriageWithLLM(
     if (!rawOutput) {
       // Motor de Inferencia Semántica Local QVAC
       console.log('[TriageExtractor] Inferencia Semántica ejecutada en QVAC local (Llama 3.2 1B Q4).');
-      const heuristic = fallbackExtraction(relatoText, transcriptText, visionText, manualInjuries, province);
+      const heuristic = fallbackExtraction(
+        relatoText,
+        transcriptText,
+        visionText,
+        manualInjuries,
+        province,
+        district,
+        corregimiento,
+        reportedPeopleCount
+      );
       rawOutput = JSON.stringify(heuristic);
     }
 
     // 3. Parsear JSON con validación estricta de Enum START y campos geográficos
     const fullInputText = [relatoText, transcriptText, manualInjuries, visionText].filter(Boolean).join(' ');
-    const parsed = parseAndValidateJSON(rawOutput, fullInputText, province, manualInjuries, visionText);
+    const parsed = parseAndValidateJSON(
+      rawOutput,
+      fullInputText,
+      province,
+      district,
+      corregimiento,
+      reportedPeopleCount,
+      manualInjuries,
+      visionText
+    );
     return {
       ...parsed,
       rawOutput,
     };
   } catch (error) {
     console.error('[TriageExtractor] Error ejecutando LLM de triaje:', error);
-    return fallbackExtraction(relatoText, transcriptText, visionText, manualInjuries, province);
+    return fallbackExtraction(
+      relatoText,
+      transcriptText,
+      visionText,
+      manualInjuries,
+      province,
+      district,
+      corregimiento,
+      reportedPeopleCount
+    );
   } finally {
     // 4. Descargar LLM para dejar la RAM 100% libre
     await qvacManager.unloadCurrentModel();
@@ -149,6 +212,9 @@ function parseAndValidateJSON(
   rawOutput: string,
   originalRelato: string = '',
   province?: string,
+  district?: string,
+  corregimiento?: string,
+  fixedPeopleCount?: number,
   manualInjuries?: string,
   visionText?: string
 ): Omit<ExtractedTriagePayload, 'rawOutput'> {
@@ -168,36 +234,68 @@ function parseAndValidateJSON(
       ? data.needs
       : deduceNeeds(originalRelato);
 
-    // Asegurar detección de ubicación geográfica de Panamá
-    const detectedLoc = detectPanamaLocation(data.locationReference || originalRelato, province);
+    // Ubicación fija vs detectada (La ubicación del formulario es inmutable)
+    const formLocationParts = [corregimiento, district, province]
+      .map((s) => (s ? s.trim() : ''))
+      .filter((s) => s.length > 0);
+    const formLocation = formLocationParts.length > 0 ? formLocationParts.join(', ') : undefined;
+    const hasSpecificFormLocation = Boolean(corregimiento?.trim() || district?.trim());
+
+    let finalLocation: string;
+    if (hasSpecificFormLocation && formLocation) {
+      finalLocation = formLocation;
+    } else {
+      const detectedLoc = detectPanamaLocation(data.locationReference || originalRelato, province);
+      finalLocation = detectedLoc.formattedReference || formLocation || 'Panamá';
+    }
+
+    // Personas afectadas fijas vs detectadas (La cantidad del formulario es inmutable)
+    const finalPeopleCount =
+      typeof fixedPeopleCount === 'number' && fixedPeopleCount > 0
+        ? fixedPeopleCount
+        : (typeof data.reportedPeopleCount === 'number' && data.reportedPeopleCount > 0
+            ? data.reportedPeopleCount
+            : parsePeopleCount(originalRelato));
 
     const extractedInjuries = data.injuriesAndSymptoms?.trim() || manualInjuries?.trim() || deduceInjuries(originalRelato);
     const extractedVisionAnalysis = data.visualTriageAnalysis?.trim() || visionText?.trim() || undefined;
 
     let finalSummary = data.extractedSummary?.trim();
-    if (!finalSummary || finalSummary.startsWith('[') || finalSummary.length < 10) {
+    if (
+      !finalSummary ||
+      finalSummary.startsWith('[') ||
+      finalSummary.length < 10 ||
+      (fixedPeopleCount !== undefined && fixedPeopleCount > 1 && finalSummary.includes('1 persona')) ||
+      (hasSpecificFormLocation && formLocation && !finalSummary.toLowerCase().includes(province?.toLowerCase() || ''))
+    ) {
       finalSummary = generateIntelligentTriageSummary({
         relatoText: originalRelato,
         transcriptText: '',
         manualInjuries: extractedInjuries,
         visionText: extractedVisionAnalysis,
-        peopleCount: typeof data.reportedPeopleCount === 'number' ? data.reportedPeopleCount : parsePeopleCount(originalRelato),
-        locationReference: data.locationReference || detectedLoc.formattedReference,
+        peopleCount: finalPeopleCount,
+        locationReference: finalLocation,
         priority,
         combinedText: `${originalRelato} ${extractedInjuries || ''} ${extractedVisionAnalysis || ''}`.toLowerCase(),
         hasNegatedInjuries: originalRelato.toLowerCase().includes('no hay herid') || originalRelato.toLowerCase().includes('sin herid'),
       });
     }
 
-    const execSummary = (data.executiveSummary && data.executiveSummary.trim().length > 20)
+    const execSummary = (
+      data.executiveSummary &&
+      data.executiveSummary.trim().length > 20 &&
+      !data.executiveSummary.startsWith('[') &&
+      !(fixedPeopleCount !== undefined && fixedPeopleCount > 1 && data.executiveSummary.includes('1 persona')) &&
+      !(hasSpecificFormLocation && formLocation && !data.executiveSummary.toLowerCase().includes(province?.toLowerCase() || ''))
+    )
       ? data.executiveSummary.trim()
       : generateAiExecutiveSummary({
           relatoText: originalRelato,
           transcriptText: '',
           visionText: extractedVisionAnalysis,
           manualInjuries: extractedInjuries,
-          peopleCount: typeof data.reportedPeopleCount === 'number' ? data.reportedPeopleCount : parsePeopleCount(originalRelato),
-          locationReference: data.locationReference || detectedLoc.formattedReference,
+          peopleCount: finalPeopleCount,
+          locationReference: finalLocation,
           priority,
           needs,
         });
@@ -209,15 +307,24 @@ function parseAndValidateJSON(
       needs,
       injuriesAndSymptoms: extractedInjuries,
       visualTriageAnalysis: extractedVisionAnalysis,
-      reportedPeopleCount: typeof data.reportedPeopleCount === 'number' ? data.reportedPeopleCount : parsePeopleCount(originalRelato),
-      locationReference: data.locationReference || detectedLoc.formattedReference,
+      reportedPeopleCount: finalPeopleCount,
+      locationReference: finalLocation,
       missingFields: Array.isArray(data.missingFields) && data.missingFields.length > 0
         ? data.missingFields
         : ['Nombre de la calle o edificio exacto', 'Coordenadas GPS exactas'],
     };
   } catch (e) {
     console.warn('[TriageExtractor] Fallo al parsear JSON del LLM. Aplicando regla heurística de seguridad:', e);
-    return fallbackExtraction(originalRelato, '', visionText, manualInjuries, province);
+    return fallbackExtraction(
+      originalRelato,
+      '',
+      visionText,
+      manualInjuries,
+      province,
+      district,
+      corregimiento,
+      fixedPeopleCount
+    );
   }
 }
 
@@ -504,15 +611,34 @@ export function fallbackExtraction(
   transcriptText: string = '',
   visionText: string = '',
   manualInjuries?: string,
-  defaultProvince?: string
+  defaultProvince?: string,
+  district?: string,
+  corregimiento?: string,
+  fixedPeopleCount?: number
 ): ExtractedTriagePayload {
   const combined = `${relatoText} ${transcriptText} ${manualInjuries || ''} ${visionText}`.toLowerCase();
 
-  // 1. Detección de Ubicación en Panamá
-  const detectedLocation = detectPanamaLocation(`${relatoText} ${transcriptText}`, defaultProvince);
+  // 1. Detección o Fijación de Ubicación en Panamá
+  const formLocationParts = [corregimiento, district, defaultProvince]
+    .map((s) => (s ? s.trim() : ''))
+    .filter((s) => s.length > 0);
+  const formLocation = formLocationParts.length > 0 ? formLocationParts.join(', ') : undefined;
+  const hasSpecificFormLocation = Boolean(corregimiento?.trim() || district?.trim());
+
+  let finalLocationReference: string;
+  if (hasSpecificFormLocation && formLocation) {
+    finalLocationReference = formLocation;
+  } else {
+    const detectedLocation = detectPanamaLocation(`${relatoText} ${transcriptText}`, defaultProvince);
+    finalLocationReference = detectedLocation.formattedReference || formLocation || 'Panamá';
+  }
 
   // 2. Conteo de Personas Afectadas
-  const peopleCount = parsePeopleCount(`${relatoText} ${transcriptText}`);
+  // Si el usuario ingresó la cantidad en el formulario, es fija y no se altera por razonamiento
+  const peopleCount =
+    typeof fixedPeopleCount === 'number' && fixedPeopleCount > 0
+      ? fixedPeopleCount
+      : parsePeopleCount(`${relatoText} ${transcriptText}`);
 
   // 3. Clasificación de Necesidades Esfera
   const needs = deduceNeeds(combined);
@@ -568,7 +694,7 @@ export function fallbackExtraction(
     manualInjuries,
     visionText,
     peopleCount,
-    locationReference: detectedLocation.formattedReference,
+    locationReference: finalLocationReference,
     priority,
     combinedText: combined,
     hasNegatedInjuries,
@@ -580,7 +706,7 @@ export function fallbackExtraction(
     visionText,
     manualInjuries,
     peopleCount,
-    locationReference: detectedLocation.formattedReference,
+    locationReference: finalLocationReference,
     priority,
     needs,
   });
@@ -593,7 +719,7 @@ export function fallbackExtraction(
     injuriesAndSymptoms: manualInjuries?.trim() || deduceInjuries(combined),
     visualTriageAnalysis: visionText?.trim() || undefined,
     reportedPeopleCount: peopleCount,
-    locationReference: detectedLocation.formattedReference,
+    locationReference: finalLocationReference,
     missingFields: ['Nombre de la calle o número de edificio', 'Coordenadas GPS exactas'],
     rawOutput: 'Inferencia Semántica Local QVAC',
   };

@@ -2,6 +2,8 @@ import { Audio } from 'expo-av';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { Alert, Platform } from 'react-native';
+export { prepareImageForVision } from './imageUtils';
+import { prepareImageForVision } from './imageUtils';
 
 export interface AudioRecordingState {
   isRecording: boolean;
@@ -131,13 +133,19 @@ export async function takeCameraPhoto(): Promise<string | null> {
 
     const result = await ImagePicker.launchCameraAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 3],
+      allowsEditing: false,
       quality: 0.5,
     });
 
     if (!result.canceled && result.assets && result.assets.length > 0) {
-      return result.assets[0].uri;
+      const originalUri = result.assets[0].uri;
+      try {
+        const prepared = await prepareImageForVision(originalUri);
+        return prepared;
+      } catch (resizeErr) {
+        console.warn('[MediaCapture] Fallo al redimensionar imagen de cámara:', resizeErr);
+        return originalUri;
+      }
     }
     return null;
   } catch (err) {
@@ -159,13 +167,19 @@ export async function pickGalleryImage(): Promise<string | null> {
 
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 3],
+      allowsEditing: false,
       quality: 0.5,
     });
 
     if (!result.canceled && result.assets && result.assets.length > 0) {
-      return result.assets[0].uri;
+      const originalUri = result.assets[0].uri;
+      try {
+        const prepared = await prepareImageForVision(originalUri);
+        return prepared;
+      } catch (resizeErr) {
+        console.warn('[MediaCapture] Fallo al redimensionar imagen de galería:', resizeErr);
+        return originalUri;
+      }
     }
     return null;
   } catch (err) {

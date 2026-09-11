@@ -11,10 +11,10 @@ const MODELS = [
     expectedSize: 43537433,
   },
   {
-    name: 'VisionPsy-Nano 460M Flash IQ3_XXS (Visión Multimodal Ultraligera)',
-    filename: 'visionpsy-nano-460m-flash-iq3_xxs-imat.gguf',
-    url: 'https://huggingface.co/qvac/VisionPsy-Nano-460M-Flash-GGUFs/resolve/main/visionpsy-nano-460m-flash-iq3_xxs-imat.gguf',
-    expectedSize: 241634112,
+    name: 'VisionPsy-Nano 460M Q4_K_M imatrix (Visión Multimodal Calibrada)',
+    filename: 'visionpsy-nano-460m-q4_k_m-imat.gguf',
+    url: 'https://huggingface.co/qvac/VisionPsy-Nano-460M-GGUFs/resolve/main/visionpsy-nano-460m-q4_k_m-imat.gguf',
+    expectedSize: 303143488,
   },
   {
     name: 'VisionPsy-Nano 460M Flash mmproj Q8 (Proyector Visual)',

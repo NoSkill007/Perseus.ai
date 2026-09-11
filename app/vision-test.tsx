@@ -140,8 +140,9 @@ export default function VisionTestScreen() {
 
     const baseDoc = (FileSystem && FileSystem.documentDirectory) ? FileSystem.documentDirectory : 'file:///data/user/0/ai.perseus.app/files/';
     const candidateFiles = [
-      'visionpsy-nano-460m-flash-iq3_xxs-imat.gguf',
+      'visionpsy-nano-460m-q4_k_m-imat.gguf',
       MODEL_REGISTRY.VISION_PSY.filename,
+      'visionpsy-nano-460m-flash-iq3_xxs-imat.gguf',
       'visionpsy-nano-460m-q4_0.gguf',
       'visionpsy-nano-460m-q8_0.gguf',
     ];
@@ -162,7 +163,7 @@ export default function VisionTestScreen() {
           try {
             const info = await FileSystem.getInfoAsync(p, { size: true });
             if (info?.exists && (!info.size || info.size > 10000000)) {
-              const mb = info.size ? (info.size / (1024 * 1024)).toFixed(1) : '230.4';
+              const mb = info.size ? (info.size / (1024 * 1024)).toFixed(1) : '289.1';
               foundBase = { path: p, mb };
               break;
             }
@@ -199,8 +200,13 @@ export default function VisionTestScreen() {
     if (foundBase) {
       setModelStatus('ready');
       const mmprojText = foundMmproj ? ` + mmproj (${foundMmproj.mb} MB)` : '';
+      const isQ4KM = foundBase.path.toLowerCase().includes('q4_k_m');
       const isFlash = foundBase.path.toLowerCase().includes('flash') || foundBase.path.toLowerCase().includes('iq3');
-      const modelName = isFlash ? 'VisionPsy-Nano Flash IQ3_XXS' : 'VisionPsy-Nano Q4';
+      const modelName = isQ4KM
+        ? 'VisionPsy-Nano 460M Q4_K_M (imatrix)'
+        : isFlash
+        ? 'VisionPsy-Nano Flash IQ3_XXS'
+        : 'VisionPsy-Nano Q4';
       setModelDetails(`${modelName} (${foundBase.mb} MB)${mmprojText}`);
       addLog(`Modelo VisionPsy listo: ${foundBase.path} (${foundBase.mb} MB)`, 'success');
       if (foundMmproj) {
