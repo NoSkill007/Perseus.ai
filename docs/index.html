@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Perseus.ai 🚨 | Red P2P de Triaje Humanitario 100% Offline</title>
+  <meta name="description" content="Red descentralizada de triaje y rescate de emergencias con Inteligencia Artificial on-device y sincronización P2P sin internet. Desarrollado para el Decentralized AI Hackathon 2026.">
+  <link rel="icon" type="image/png" href="assets/icon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- ==================== NAVBAR ==================== -->
+  <nav class="navbar">
+    <div class="container nav-container">
+      <a href="#" class="nav-brand">
+
+        <img src="assets/logo.png" alt="Perseus.ai" class="nav-logo-text">
+      </a>
+      <ul class="nav-menu">
+        <li><a href="#problema" class="nav-link">Problemática</a></li>
+        <li><a href="#como-funciona" class="nav-link">Cómo Funciona</a></li>
+        <li><a href="#tecnologia" class="nav-link">Tecnología</a></li>
+        <li><a href="#comparativa" class="nav-link">Comparativa</a></li>
+        <li><a href="https://github.com/NoSkill007/Perseus.ai" target="_blank" class="nav-link">GitHub</a></li>
+      </ul>
+      <a href="https://drive.google.com/drive/folders/1mmbCGR76ZJaTXON5LIVqGxn4fAWs1qZr?usp=sharing" class="nav-cta-btn" target="_blank">
+        Descargar APK
+      </a>
+    </div>
+  </nav>
+
+  <!-- ==================== HERO SECTION ==================== -->
+  <header class="hero">
+    <div class="container hero-grid">
+      <div class="hero-content">
+        <div class="hero-badge">
+          <span class="badge-dot"></span>
+          <span>Decentralized AI Hackathon 2026 • ISD Summit Panamá</span>
+        </div>
+        <h1 class="hero-title">
+          Triaje Humanitario <span class="gradient-text">100% Offline</span> con IA On-Device y <span class="gradient-danger">Red P2P</span>
+        </h1>
+        <p class="hero-desc">
+          Cuando las telecomunicaciones colapsan ante desastres naturales, <strong>Perseus.ai</strong> transforma smartphones en nodos inteligentes de rescate: captura multimodal por voz y foto, triaje con <em>Whisper</em> y <em>Llama 3.2</em> en el chip local, y coordinación mallada sin internet.
+        </p>
+        <div class="hero-actions">
+          <a href="https://github.com/NoSkill007/Perseus.ai" class="btn-primary" target="_blank">
+            <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+            Ver Código en GitHub
+          </a>
+          <a href="#como-funciona" class="btn-secondary">
+            Ver Funcionamiento
+          </a>
+        </div>
+        <div class="hero-stats">
+          <div class="hero-stat-item">
+            <h4>0 Nube</h4>
+            <p>Sin APIs externas / Modo Avión</p>
+          </div>
+          <div class="hero-stat-item">
+            <h4>P2P Cluster</h4>
+            <p>Wi-Fi Direct + BLE Mesh</p>
+          </div>
+          <div class="hero-stat-item">
+            <h4>START + Esfera</h4>
+            <p>Estándar humanitario médico</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Phone Mockup -->
+      <div class="mockup-wrapper">
+        <div class="mockup-phone">
+          <div class="phone-bar">
+            <span>12:45</span>
+            <span class="airplane-badge">✈ MODO AVION</span>
+            <span>100%</span>
+          </div>
+          <div class="mockup-header">
+            <img src="assets/logo.png" alt="Logo" class="mockup-logo">
+            <div class="mockup-user">
+              <strong>Jesús Reyes</strong>
+              <div class="mockup-role">CIUDADANO</div>
+            </div>
+          </div>
+          
+          <div class="mockup-alert-card">
+            <h5>🚨 Reportar Emergencia</h5>
+            <p>Voz, foto o texto procesados localmente</p>
+          </div>
+
+          <div class="mockup-report-card">
+            <span class="report-priority-badge">PRIORIDAD ROJO (INMEDIATO)</span>
+            <p class="report-summary-text">
+              "2 personas atrapadas en vivienda por deslizamiento tras sismo. Traumatismo craneal y fractura expuesta."
+            </p>
+            <div class="report-tags">
+              <span class="tag-chip">Salud / Primeros Auxilios</span>
+              <span class="tag-chip">Acceso / Rescate</span>
+              <span class="tag-chip">Albergue</span>
+            </div>
+          </div>
+
+          <div class="mockup-mesh-status">
+            <span>📡</span>
+            <div>
+              <strong>Nearby P2P Activo:</strong> 2 nodos descubiertos en rango táctico. Ficha transmitida por radio local.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ==================== PROBLEM SECTION ==================== -->
+  <section id="problema" class="section">
+    <div class="container">
+      <div class="section-header">
+        <span class="section-tag">El Problema Humanitario</span>
+        <h2 class="section-title">Cuando el Desastre Golpea, la Nube Deja de Existir</h2>
+        <p class="section-desc">
+          Los recientes terremotos de 2026 en <strong>Colombia</strong> y <strong>Venezuela</strong>, y las recurrentes inundaciones en <strong>Chiriquí y Bocas del Toro</strong> en Panamá demostraron que las telecomunicaciones colapsan en los primeros minutos.
+        </p>
+      </div>
+
+      <div class="problem-grid">
+        <div class="problem-card">
+          <div class="problem-icon">⚡</div>
+          <h3>Colapso de Telecomunicaciones</h3>
+          <p>
+            Torres celulares sin energía y cables de fibra óptica destruidos dejan a miles de familias con "Cero Señal". Las aplicaciones que dependen de internet o APIs en la nube quedan completamente inutilizables.
+          </p>
+        </div>
+
+        <div class="problem-card">
+          <div class="problem-icon">📢</div>
+          <h3>Caos y Falta de Triaje</h3>
+          <p>
+            Los centros de mando reciben audios de WhatsApp fragmentados y notas desordenadas. Es imposible discernir rápidamente entre un afectado con hemorragia crítica y alguien con lesiones leves.
+          </p>
+        </div>
+
+        <div class="problem-card">
+          <div class="problem-icon">🚒</div>
+          <h3>Coordinación a Ciegas</h3>
+          <p>
+            Las brigadas de Sinaproc, Bomberos y Cruz Roja llegan a campo sin un registro centralizado, duplicando esfuerzos en una misma zona mientras otras comunidades quedan aisladas.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== HOW IT WORKS ==================== -->
+  <section id="como-funciona" class="section" style="background: rgba(15, 23, 42, 0.4);">
+    <div class="container">
+      <div class="section-header">
+        <span class="section-tag">Flujo Tecnológico</span>
+        <h2 class="section-title">El Pipeline Secuencial On-Device</h2>
+        <p class="section-desc">
+          Perseus.ai opera bajo un estricto principio de cómputo secuencial y liberación inmediata de memoria RAM para garantizar estabilidad absoluta en hardware móvil.
+        </p>
+      </div>
+
+      <div class="steps-grid">
+        <div class="step-card">
+          <div class="step-num">01</div>
+          <span class="step-badge">CAPTURA MULTIMODAL</span>
+          <h3>Voz, Foto y Relato</h3>
+          <p>
+            El afectado o rescatista graba una nota de voz, toma una fotografía de los daños o describe el suceso. La app funciona en <strong>Modo Avión estricto</strong> sin necesidad de tarjeta SIM ni Wi-Fi.
+          </p>
+          <div class="step-detail-box">
+            Audio optimizado m4a/wav • Cámara integrada • GPS y provincias de Panamá
+          </div>
+        </div>
+
+        <div class="step-card">
+          <div class="step-num">02</div>
+          <span class="step-badge">IA ON-DEVICE (QVAC)</span>
+          <h3>Transcripción y Triaje</h3>
+          <p>
+            <strong>Whisper Tiny</strong> transcribe el audio en español en el procesador local y libera la memoria. Luego, <strong>Llama 3.2 1B</strong> extrae el resumen humanitario, clasifica prioridades START y necesidades Esfera.
+          </p>
+          <div class="step-detail-box">
+            Inferencia neuronal en ARM64 / NEON • Zero-Cloud • Ficha estructurada JSON
+          </div>
+        </div>
+
+        <div class="step-card">
+          <div class="step-num">03</div>
+          <span class="step-badge">MALLA DESCENTRALIZADA</span>
+          <h3>Difusión P2P Nearby</h3>
+          <p>
+            Utilizando Google Nearby Connections (topología cluster), los teléfonos se enlazan por BLE y Wi-Fi Direct para propagar reportes, audios y fotos de teléfono a teléfono a rescatistas cercanos.
+          </p>
+          <div class="step-detail-box">
+            Transferencias mixtas BYTES + FILE • Radar RSSI • Resolución de conflictos
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== COMPARISON TABLE ==================== -->
+  <section id="comparativa" class="section">
+    <div class="container">
+      <div class="section-header">
+        <span class="section-tag">La Diferencia</span>
+        <h2 class="section-title">Aplicaciones Tradicionales vs. Perseus.ai</h2>
+        <p class="section-desc">
+          Una comparativa directa entre cómo responde la tecnología convencional y cómo salva vidas Perseus.ai en el epicentro de la catástrofe.
+        </p>
+      </div>
+
+      <div class="table-wrapper">
+        <table class="comp-table">
+          <thead>
+            <tr>
+              <th>Característica</th>
+              <th>Apps Tradicionales (911, WhatsApp, Nube)</th>
+              <th class="highlight">Perseus.ai (Descentralizado)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Dependencia de Conectividad</strong></td>
+              <td>Requiere 4G/5G, Internet o Servidor</td>
+              <td class="highlight"><span class="check-yes">✓ 100% Funcional en Modo Avión</span></td>
+            </tr>
+            <tr>
+              <td><strong>Inferencia de IA</strong></td>
+              <td>Llamadas a APIs en la nube (OpenAI, AWS)</td>
+              <td class="highlight"><span class="check-yes">✓ En el chip físico (Whisper + Llama 3.2)</span></td>
+            </tr>
+            <tr>
+              <td><strong>Estandarización Médica</strong></td>
+              <td>Mensajes de texto planos y caóticos</td>
+              <td class="highlight"><span class="check-yes">✓ Protocolo START e ISO 22320</span></td>
+            </tr>
+            <tr>
+              <td><strong>Sectorización Humanitaria</strong></td>
+              <td>No estructurada</td>
+              <td class="highlight"><span class="check-yes">✓ Manual Esfera (Salud, WASH, Albergue)</span></td>
+            </tr>
+            <tr>
+              <td><strong>Comunicación en Campo</strong></td>
+              <td>Imposible si no hay antenas activas</td>
+              <td class="highlight"><span class="check-yes">✓ Malla P2P Directa (BLE + Wi-Fi Direct)</span></td>
+            </tr>
+            <tr>
+              <td><strong>Privacidad de Víctimas</strong></td>
+              <td>Datos sensibles enviados a servidores remotos</td>
+              <td class="highlight"><span class="check-yes">✓ Datos encriptados en SQLite local</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== TECH STACK ==================== -->
+  <section id="tecnologia" class="section" style="background: rgba(15, 23, 42, 0.4);">
+    <div class="container">
+      <div class="section-header">
+        <span class="section-tag">Arquitectura Técnica</span>
+        <h2 class="section-title">Pila de Ingeniería de Vanguardia</h2>
+        <p class="section-desc">
+          Construido para alta resiliencia y cero dependencias de infraestructura centralizada.
+        </p>
+      </div>
+
+      <div class="tech-grid">
+        <div class="tech-card">
+          <div class="tech-icon">🧠</div>
+          <h4>Llama 3.2 1B</h4>
+          <span class="tech-badge-sub">GGUF Q4_0 • Meta AI</span>
+          <p>Extracción de resúmenes operativos, clasificación Esfera y prioridad médica START en milisegundos.</p>
+        </div>
+
+        <div class="tech-card">
+          <div class="tech-icon">🎙️</div>
+          <h4>Whisper Tiny</h4>
+          <span class="tech-badge-sub">GGML Q8_0 • OpenAI</span>
+          <p>Reconocimiento de voz de alta precisión para transcripción de testimonios en español sin internet.</p>
+        </div>
+
+        <div class="tech-card">
+          <div class="tech-icon">📡</div>
+          <h4>Nearby Connections</h4>
+          <span class="tech-badge-sub">Google P2P_CLUSTER</span>
+          <p>Descubrimiento automático y enlace directo de dispositivos por Wi-Fi Direct y Bluetooth Low Energy.</p>
+        </div>
+
+        <div class="tech-card">
+          <div class="tech-icon">🗄️</div>
+          <h4>SQLite On-Device</h4>
+          <span class="tech-badge-sub">expo-sqlite • 4 Tablas</span>
+          <p>Persistencia atómica de reportes, nodos de rescate, asignaciones y bitácora de auditoría de red.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== CTA SECTION ==================== -->
+  <section class="section">
+    <div class="container">
+      <div class="cta-banner">
+        <h2>El Futuro del Rescate Humanitario Comienza Aquí</h2>
+        <p>
+          Perseus.ai demuestra que la verdadera Inteligencia Artificial Descentralizada empodera a las comunidades cuando la infraestructura tradicional colapsa.
+        </p>
+        <div class="cta-buttons">
+          <a href="https://github.com/NoSkill007/Perseus.ai" class="btn-primary" target="_blank">
+            Explorar Repositorio en GitHub
+          </a>
+          <a href="https://github.com/NoSkill007/Perseus.ai/blob/IA_QVAC/README.md" class="btn-secondary" target="_blank">
+            Leer Especificación Técnica
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== FOOTER ==================== -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="https://github.com/NoSkill007/Perseus.ai" target="_blank">Repositorio</a>
+        <a href="https://github.com/NoSkill007/Perseus.ai/blob/IA_QVAC/README.md" target="_blank">Documentación</a>
+        <a href="https://github.com/NoSkill007/Perseus.ai/blob/IA_QVAC/docs/architecture.md" target="_blank">Arquitectura</a>
+      </div>
+      <p>
+        Perseus.ai • Decentralized AI Hackathon (ISD Summit 2026, Ciudad de Panamá). Proyecto bajo Licencia MIT.
+      </p>
+    </div>
+  </footer>
+
+</body>
+</html>
