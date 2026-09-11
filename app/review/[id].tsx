@@ -525,7 +525,7 @@ export default function HumanReviewScreen() {
               <Text style={styles.aiBadgeText}>IA Local QVAC</Text>
             </View>
             <Text style={[styles.cardTitle, { flex: 1, color: theme.primary }]}>
-              Resumen Ejecutivo IA (Rescatistas)
+              Resumen Ejecutivo IA
             </Text>
           </View>
           <Text style={styles.fieldDescription}>
