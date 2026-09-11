@@ -245,6 +245,7 @@ export interface BleBeaconDetection {
   rssi: number;
   distanceMeters: number;
   timestamp: number;
+  transportType?: 'bluetooth' | 'wifi_lan';
 }
 
 /**
@@ -328,7 +329,8 @@ export function subscribeToBleBeaconDetections(
       reportIdShort: data.reportIdShort,
       rssi: data.rssi,
       distanceMeters: data.distanceMeters,
-      timestamp: data.timestamp,
+      timestamp: data.timestamp || Date.now(),
+      transportType: 'bluetooth',
     });
   });
 
@@ -364,4 +366,33 @@ export async function stopHttpServer(): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * Obtiene la dirección IP local activa en la interfaz Wi-Fi / Hotspot del dispositivo
+ */
+export async function getLocalIpAddress(): Promise<string> {
+  if (!isBluetoothNativeSupported()) return '192.168.43.1';
+  try {
+    const ip = await BluetoothP2P.getLocalIpAddress();
+    return ip || '192.168.43.1';
+  } catch (err) {
+    console.warn('[BluetoothNative] Error al obtener IP local:', err);
+    return '192.168.43.1';
+  }
+}
+
+/**
+ * Obtiene la dirección IP del Gateway / Servidor Hotspot (Rescatista) al que está conectado este cliente
+ */
+export async function getGatewayIpAddress(): Promise<string> {
+  if (!isBluetoothNativeSupported()) return '192.168.43.1';
+  try {
+    const ip = await BluetoothP2P.getGatewayIpAddress();
+    return ip || '192.168.43.1';
+  } catch (err) {
+    console.warn('[BluetoothNative] Error al obtener Gateway IP:', err);
+    return '192.168.43.1';
+  }
+}
+
 

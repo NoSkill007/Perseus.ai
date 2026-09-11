@@ -30,7 +30,7 @@ import {
 import { syncReportsToPeer, syncReportsBeaconLoop, processIncomingPacket } from '../../src/services/syncEngine';
 import { getRecentSyncLogs, getSyncStats, recordSyncLog } from '../../src/services/syncLogService';
 import { getRescueNodes, upsertRescueNode } from '../../src/services/nodeService';
-import { createPacket, triggerMockReceiverAck, sendPacketViaBluetooth } from '../../src/services/p2pTransport';
+import { createPacket, triggerMockReceiverAck, sendPacketViaBluetooth, testWifiPeerReachability } from '../../src/services/p2pTransport';
 import {
   isBluetoothNativeSupported,
   getPairedBluetoothDevices,
@@ -47,6 +47,8 @@ import {
   checkBluetoothEnabled,
   PairedDevice,
   BleBeaconDetection,
+  getLocalIpAddress,
+  getGatewayIpAddress,
 } from '../../src/services/bluetoothNative';
 import {
   isNearbySupported,
@@ -75,41 +77,16 @@ import type {
   SyncLogRecord,
   RescueNode,
 } from '../../src/types/triageTypes';
+import {
+  getProximityLabel,
+  getTacticalAirTagTelemetry,
+  formatDistanceMeters,
+  calculateEstimatedMeters,
+  getCardinalDirectionFromId,
+  type TacticalAirTagTelemetry,
+} from '../../src/utils/airtagRadarUtils';
 
 const P2P_PORT = 7890;
-
-function getProximityLabel(rssi: number): { badge: string; label: string; color: string; percent: string } {
-  if (rssi >= -52) {
-    return {
-      badge: 'INMEDIATO',
-      label: 'Contacto Inmediato / Al Lado',
-      color: '#22C55E',
-      percent: '100%',
-    };
-  }
-  if (rssi >= -68) {
-    return {
-      badge: 'CERCANO',
-      label: 'Muy Cercano (Mismo Recinto)',
-      color: '#38BDF8',
-      percent: '75%',
-    };
-  }
-  if (rssi >= -82) {
-    return {
-      badge: 'RANGO MEDIO',
-      label: 'Estructura Contigua',
-      color: '#F59E0B',
-      percent: '50%',
-    };
-  }
-  return {
-    badge: 'PERÍMETRO',
-    label: 'Límite de Cobertura',
-    color: '#94A3B8',
-    percent: '25%',
-  };
-}
 
 export default function SincronizarScreen() {
   const { theme } = useTheme();
@@ -123,6 +100,9 @@ export default function SincronizarScreen() {
   // Modo de transporte: Nearby vs Wi-Fi Hotspot vs Bluetooth
   const [transport, setTransport] = useState<P2PTransportType>('nearby');
   const [peerAddress, setPeerAddress] = useState('192.168.43.1'); // IP hotspot default o ID BLE
+  const [localIp, setLocalIp] = useState<string>('192.168.43.1');
+  const [isTestingWifi, setIsTestingWifi] = useState(false);
+  const [wifiTestResult, setWifiTestResult] = useState<{ success: boolean; msg: string } | null>(null);
 
   // Estados de Google Nearby Connections (P2P Cluster)
   const [nearbyEndpoints, setNearbyEndpoints] = useState<NearbyEndpoint[]>([]);
@@ -397,7 +377,138 @@ export default function SincronizarScreen() {
     };
   }, []);
 
+  // Limpieza periódica de balizas obsoletas / fuera de cobertura (TTL de 15 segundos)
+  // Si un dispositivo apaga su baliza o sale del radio de alcance, desaparece automáticamente del radar
+  useEffect(() => {
+    if (!isListening) return;
+
+    const interval = setInterval(() => {
+      const now = Date.now();
+      const BEACON_TTL_MS = 15000;
+      setDetectedBeacons((prev) => {
+        const active = prev.filter((b) => now - (b.timestamp || 0) < BEACON_TTL_MS);
+        if (active.length !== prev.length) {
+          console.log(`[Sincronizar] ${prev.length - active.length} baliza(s) expirada(s) por pérdida de señal`);
+          return active;
+        }
+        return prev;
+      });
+    }, 2500);
+
+    return () => clearInterval(interval);
+  }, [isListening]);
+
   const isRescatista = profile?.role === 'rescatista';
+
+  /**
+   * Inicia el Servidor HTTP nativo Wi-Fi y suscriptores de escucha para el Rescatista
+   */
+  const startWifiHttpServer = useCallback(async () => {
+    if (!isBluetoothNativeSupported()) return;
+    try {
+      const freshIp = await getLocalIpAddress().catch(() => '192.168.43.1');
+      setLocalIp(freshIp);
+      setPeerAddress(freshIp);
+      await startHttpServer(P2P_PORT);
+      setIsListening(true);
+      console.log(`[Sincronizar] Servidor HTTP nativo activo en ${freshIp}:${P2P_PORT}`);
+      btSubscriptionRef.current?.remove();
+      btSubscriptionRef.current = subscribeToIncomingBluetoothPackets((event) => {
+        console.log('[Sincronizar] ¡Paquete Wi-Fi recibido de:', event.senderName);
+        try {
+          const packet = JSON.parse(event.packetJson);
+          const res = processIncomingPacket(db, packet, 'wifi_lan');
+          if (res.success) {
+            const isHandshake = packet.type === 'HANDSHAKE' || packet.type === 'PING';
+            const rep = packet?.payload?.reports?.[0];
+            const wifiBeacon: BleBeaconDetection = {
+              deviceAddress: event.senderAddress || '192.168.43.x',
+              deviceName: event.senderName || (isHandshake ? `Nodo-WiFi (${event.senderAddress || 'Hotspot'})` : `Ciudadano Wi-Fi (${event.senderAddress || 'Hotspot'})`),
+              priority: rep?.triagePriority || (isHandshake ? 'VERDE' : 'AMARILLO'),
+              peopleCount: rep?.reportedPeopleCount || (isHandshake ? 0 : 1),
+              reportIdShort: isHandshake ? 'ENLACE' : (rep?.reportId || 'SOS').slice(-6).toUpperCase(),
+              rssi: isHandshake ? -50 : -58,
+              distanceMeters: isHandshake ? 1.5 : 3.5,
+              timestamp: Date.now(),
+              transportType: 'wifi_lan',
+            };
+            setDetectedBeacons((prev) => [wifiBeacon, ...prev.filter((b) => b.deviceAddress !== wifiBeacon.deviceAddress)]);
+
+            if (isHandshake) {
+              Alert.alert(
+                '📡 Señal Wi-Fi Detectada',
+                `¡Paquete de prueba / handshake recibido con éxito de ${event.senderName}! Enlace verificado y activo en la red.`
+              );
+            } else {
+              Alert.alert(
+                '📥 Reporte Recibido por Wi-Fi Hotspot',
+                `¡Paquete físico recibido de ${event.senderName}! ${res.processedCount > 0 ? `${res.processedCount} nuevo(s) reporte(s) guardado(s)` : 'Reporte recibido (ya estaba registrado en la base de datos)'}.`
+              );
+            }
+            loadData();
+          }
+        } catch (parseErr) {
+          console.error('[Sincronizar] Error al parsear paquete Wi-Fi:', parseErr);
+        }
+      });
+    } catch (err: any) {
+      console.warn('[Sincronizar] Error al arrancar servidor HTTP Wi-Fi:', err);
+      setIsListening(false);
+    }
+  }, [db, loadData]);
+
+  // Actualizar IP local, auto-activar receptor para rescatista o auto-detectar Gateway para ciudadano
+  useEffect(() => {
+    if (transport === 'wifi_lan') {
+      if (isRescatista) {
+        startWifiHttpServer();
+      } else {
+        // En modo Ciudadano: detectar automáticamente la IP del Hotspot del Rescatista (Gateway)
+        getGatewayIpAddress()
+          .then((gw) => {
+            if (gw && gw !== '0.0.0.0') {
+              setPeerAddress(gw);
+            }
+          })
+          .catch(() => {});
+      }
+    }
+  }, [transport, isRescatista, startWifiHttpServer]);
+
+  /**
+   * Verifica si el servidor HTTP del rescatista está activo y transmite un paquete de prueba
+   */
+  const handleTestWifiReachability = async () => {
+    const target = peerAddress.trim() || '192.168.43.1';
+    setIsTestingWifi(true);
+    setWifiTestResult(null);
+    try {
+      const res = await testWifiPeerReachability(
+        target,
+        P2P_PORT,
+        5000,
+        profile?.fullName ? `Ciudadano: ${profile.fullName}` : undefined
+      );
+      if (res.reachable) {
+        setWifiTestResult({
+          success: true,
+          msg: `¡Paquete de prueba entregado con éxito! El Rescatista en ${target}:${P2P_PORT} respondió con acuse ACK (${res.latencyMs || 25}ms). El canal Wi-Fi está 100% operativo.`,
+        });
+      } else {
+        setWifiTestResult({
+          success: false,
+          msg: res.error || `No se pudo conectar a ${target}:${P2P_PORT}. Verifica que el rescatista tenga el receptor activo y estés conectado a su red Wi-Fi o Hotspot.`,
+        });
+      }
+    } catch (e: any) {
+      setWifiTestResult({
+        success: false,
+        msg: e.message || 'Error al verificar conectividad Wi-Fi',
+      });
+    } finally {
+      setIsTestingWifi(false);
+    }
+  };
 
   const toggleReportSelection = (reportId: string) => {
     setSelectedReportIds((prev) => {
@@ -415,6 +526,14 @@ export default function SincronizarScreen() {
    * Inicia la Baliza SOS Continua (Duty-Cycling y reintentos infinitos hasta ACK o cancelación)
    */
   const handleStartContinuousBeacon = async () => {
+    if (isRescatista) {
+      Alert.alert(
+        'Operación no permitida',
+        'La emisión de balizas SOS continuas está reservada para ciudadanos en peligro. Como rescatista, mantén activo el modo Receptor.'
+      );
+      return;
+    }
+
     if (selectedReportIds.size === 0) {
       Alert.alert('Sin selección', 'Selecciona al menos un reporte para emitir la baliza SOS.');
       return;
@@ -480,7 +599,7 @@ export default function SincronizarScreen() {
     }
 
     const targetAddress = transport === 'wifi_lan'
-      ? '192.168.43.1'
+      ? (peerAddress.trim() || '192.168.43.1')
       : (pairedDevices[0]?.address || pairedDevices[0]?.name || 'BRIGADA-BT');
 
     try {
@@ -540,6 +659,14 @@ export default function SincronizarScreen() {
    * Ejecuta la sincronización multi-transporte puntual P2P
    */
   const handleStartSync = async () => {
+    if (isRescatista) {
+      Alert.alert(
+        'Operación no permitida',
+        'El envío de reportes está reservado para ciudadanos. Como rescatista, tu función es recibir reportes con el modo Receptor.'
+      );
+      return;
+    }
+
     if (selectedReportIds.size === 0) {
       Alert.alert('Sin selección', 'Selecciona al menos un reporte para sincronizar.');
       return;
@@ -570,7 +697,7 @@ export default function SincronizarScreen() {
 
     const deviceId = profile?.phone || 'node-device-01';
     const targetAddress = transport === 'wifi_lan'
-      ? '192.168.43.1'
+      ? (peerAddress.trim() || '192.168.43.1')
       : (pairedDevices[0]?.address || pairedDevices[0]?.name || 'BRIGADA-BT');
 
     try {
@@ -631,6 +758,41 @@ export default function SincronizarScreen() {
 
     const res = processIncomingPacket(db, demoPacket, transport);
     if (res.success) {
+      if (transport === 'bluetooth') {
+        const mockBeacon: BleBeaconDetection = {
+          deviceAddress: 'E4:5F:01:9A:33:12',
+          deviceName: 'Ciudadano SOS (Tierras Altas)',
+          priority: 'ROJO',
+          peopleCount: 3,
+          reportIdShort: 'SOS-789',
+          rssi: -64,
+          distanceMeters: 2.8,
+          timestamp: Date.now(),
+          transportType: 'bluetooth',
+        };
+        setDetectedBeacons((prev) => [mockBeacon, ...prev.filter((b) => b.deviceAddress !== mockBeacon.deviceAddress)]);
+      } else if (transport === 'wifi_lan') {
+        const mockWifiBeacon: BleBeaconDetection = {
+          deviceAddress: '192.168.43.88',
+          deviceName: 'Ciudadano SOS (Wi-Fi Hotspot)',
+          priority: 'ROJO',
+          peopleCount: 2,
+          reportIdShort: 'WIFI-404',
+          rssi: -56,
+          distanceMeters: 3.2,
+          timestamp: Date.now(),
+          transportType: 'wifi_lan',
+        };
+        setDetectedBeacons((prev) => [mockWifiBeacon, ...prev.filter((b) => b.deviceAddress !== mockWifiBeacon.deviceAddress)]);
+      } else if (transport === 'nearby') {
+        const mockEndpoint: NearbyEndpoint = {
+          endpointId: 'NODO-WIFI-DIR-77',
+          endpointName: 'Brigada Rescate (Wi-Fi Direct)',
+          serviceId: 'ai.perseus.p2p',
+        };
+        setNearbyEndpoints((prev) => [mockEndpoint, ...prev.filter((e) => e.endpointId !== mockEndpoint.endpointId)]);
+      }
+
       Alert.alert(
         '📥 Paquete P2P Recibido',
         `Se procesaron ${res.processedCount} reporte(s) entrante(s) de ${demoPacket.senderCallsign}. Registrado en SQLite.`
@@ -696,7 +858,7 @@ export default function SincronizarScreen() {
             console.log('[Sincronizar] ¡Baliza AirTag detectada!', beacon.priority, beacon.deviceAddress);
             setDetectedBeacons((prev) => {
               const filtered = prev.filter((b) => b.deviceAddress !== beacon.deviceAddress);
-              return [beacon, ...filtered];
+              return [{ ...beacon, timestamp: Date.now(), transportType: 'bluetooth' }, ...filtered];
             });
           });
         } catch (err: any) {
@@ -704,30 +866,7 @@ export default function SincronizarScreen() {
           setIsListening(false);
         }
       } else if (transport === 'wifi_lan' && isBluetoothNativeSupported()) {
-        try {
-          await startHttpServer(P2P_PORT);
-          console.log(`[Sincronizar] Servidor HTTP nativo activo en puerto ${P2P_PORT}`);
-          btSubscriptionRef.current?.remove();
-          btSubscriptionRef.current = subscribeToIncomingBluetoothPackets((event) => {
-            console.log('[Sincronizar] ¡Paquete Wi-Fi recibido de:', event.senderName);
-            try {
-              const packet = JSON.parse(event.packetJson);
-              const res = processIncomingPacket(db, packet, 'wifi_lan');
-              if (res.success) {
-                Alert.alert(
-                  '📥 Reporte Recibido por Wi-Fi Hotspot',
-                  `¡Paquete físico recibido de ${event.senderName}! ${res.processedCount} reporte(s) integrado(s) en la base de datos de la brigada.`
-                );
-                loadData();
-              }
-            } catch (parseErr) {
-              console.error('[Sincronizar] Error al parsear paquete Wi-Fi:', parseErr);
-            }
-          });
-        } catch (err: any) {
-          Alert.alert('Error Wi-Fi', err.message || 'No se pudo iniciar el servidor Wi-Fi Hotspot');
-          setIsListening(false);
-        }
+        await startWifiHttpServer();
       }
     } else {
       setIsListening(false);
@@ -744,6 +883,7 @@ export default function SincronizarScreen() {
         await stopHttpServer().catch(() => {});
         btSubscriptionRef.current?.remove();
         btSubscriptionRef.current = null;
+        setDetectedBeacons([]);
         console.log('[Sincronizar] Servidor HTTP Wi-Fi detenido');
       }
     }
@@ -886,6 +1026,14 @@ export default function SincronizarScreen() {
   };
 
   const handleSendReportsViaNearby = async (targetEndpointId: string) => {
+    if (isRescatista) {
+      Alert.alert(
+        'Acceso no permitido',
+        'El rol de Rescatista está habilitado exclusivamente para recibir y atender reportes de auxilio, no para enviarlos.'
+      );
+      return;
+    }
+
     if (selectedReportIds.size === 0) {
       Alert.alert('Sin selección', 'Selecciona al menos un reporte para enviar.');
       return;
@@ -963,6 +1111,7 @@ export default function SincronizarScreen() {
                 await stopBleRadar().catch(() => {});
                 await stopHttpServer().catch(() => {});
               }
+              setDetectedBeacons([]);
               setTransport('nearby');
             }}
             activeOpacity={0.8}
@@ -997,7 +1146,20 @@ export default function SincronizarScreen() {
                 await stopBleRadar().catch(() => {});
                 await stopHttpServer().catch(() => {});
               }
+              setDetectedBeacons([]);
               setTransport('wifi_lan');
+              setWifiTestResult(null);
+              if (isRescatista) {
+                startWifiHttpServer();
+              } else {
+                getGatewayIpAddress()
+                  .then((gw) => {
+                    if (gw && gw !== '0.0.0.0') {
+                      setPeerAddress(gw);
+                    }
+                  })
+                  .catch(() => {});
+              }
             }}
             activeOpacity={0.8}
           >
@@ -1031,6 +1193,7 @@ export default function SincronizarScreen() {
                 await stopBleRadar().catch(() => {});
                 await stopHttpServer().catch(() => {});
               }
+              setDetectedBeacons([]);
               setTransport('bluetooth');
               if (isBluetoothNativeSupported()) {
                 const granted = await requestBluetoothPermissions();
@@ -1065,19 +1228,19 @@ export default function SincronizarScreen() {
         {/* Tarjeta de Métricas / Resumen */}
         <View style={styles.statsRow}>
           <View style={styles.statBox}>
-            <Ionicons name="arrow-up-circle" size={20} color={theme.primary} />
-            <Text style={styles.statNum}>{stats.totalSent}</Text>
-            <Text style={styles.statLabel}>Enviados</Text>
+            <Ionicons name="arrow-up-circle" size={18} color={theme.primary} />
+            <Text numberOfLines={1} style={styles.statNum}>{stats.totalSent}</Text>
+            <Text numberOfLines={1} style={styles.statLabel}>Enviados</Text>
           </View>
           <View style={styles.statBox}>
-            <Ionicons name="arrow-down-circle" size={20} color={theme.success} />
-            <Text style={styles.statNum}>{stats.totalReceived}</Text>
-            <Text style={styles.statLabel}>Recibidos</Text>
+            <Ionicons name="arrow-down-circle" size={18} color={theme.success} />
+            <Text numberOfLines={1} style={styles.statNum}>{stats.totalReceived}</Text>
+            <Text numberOfLines={1} style={styles.statLabel}>Recibidos</Text>
           </View>
           <View style={styles.statBox}>
-            <Ionicons name="copy-outline" size={20} color={theme.warning} />
-            <Text style={styles.statNum}>{stats.totalDuplicates}</Text>
-            <Text style={styles.statLabel}>Duplicados</Text>
+            <Ionicons name="copy-outline" size={18} color={theme.warning} />
+            <Text numberOfLines={1} style={styles.statNum}>{stats.totalDuplicates}</Text>
+            <Text numberOfLines={1} style={styles.statLabel}>Duplicados</Text>
           </View>
         </View>
 
@@ -1203,19 +1366,42 @@ export default function SincronizarScreen() {
                               </TouchableOpacity>
                             ) : (
                               <>
-                                <TouchableOpacity
-                                  style={[
-                                    styles.mainButton,
-                                    { flex: 2, marginTop: 0, paddingVertical: 8, backgroundColor: theme.success },
-                                  ]}
-                                  onPress={() => handleSendReportsViaNearby(ep.endpointId)}
-                                  activeOpacity={0.8}
-                                >
-                                  <Ionicons name="send" size={16} color="#FFFFFF" />
-                                  <Text style={[styles.mainButtonText, { fontSize: 13 }]}>
-                                    Enviar {selectedReportIds.size} Reporte(s)
-                                  </Text>
-                                </TouchableOpacity>
+                                {!isRescatista ? (
+                                  <TouchableOpacity
+                                    style={[
+                                      styles.mainButton,
+                                      { flex: 2, marginTop: 0, paddingVertical: 8, backgroundColor: theme.success },
+                                    ]}
+                                    onPress={() => handleSendReportsViaNearby(ep.endpointId)}
+                                    activeOpacity={0.8}
+                                  >
+                                    <Ionicons name="send" size={16} color="#FFFFFF" />
+                                    <Text style={[styles.mainButtonText, { fontSize: 13 }]}>
+                                      Enviar {selectedReportIds.size} Reporte(s)
+                                    </Text>
+                                  </TouchableOpacity>
+                                ) : (
+                                  <View
+                                    style={{
+                                      flex: 2,
+                                      flexDirection: 'row',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      backgroundColor: theme.success + '20',
+                                      borderColor: theme.success,
+                                      borderWidth: 1,
+                                      borderRadius: 8,
+                                      paddingVertical: 8,
+                                      paddingHorizontal: 10,
+                                      gap: 6,
+                                    }}
+                                  >
+                                    <Ionicons name="radio" size={16} color={theme.success} />
+                                    <Text style={{ color: theme.success, fontSize: 12, fontWeight: '700' }}>
+                                      Receptor Activo
+                                    </Text>
+                                  </View>
+                                )}
 
                                 <TouchableOpacity
                                   style={[
@@ -1248,51 +1434,63 @@ export default function SincronizarScreen() {
               )}
             </View>
 
-            {/* Selección de Reportes para Transmisión Nearby */}
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>
-                Seleccionar Reportes para Envío ({pendingReports.length})
-              </Text>
-              <Text style={styles.cardDesc}>
-                Los reportes seleccionados se enviarán con su ficha clínica JSON, notas de voz y fotos adjuntas.
-              </Text>
+            {/* Selección de Reportes para Transmisión Nearby (Ciudadano) vs Modo Receptor (Rescatista) */}
+            {!isRescatista ? (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>
+                  Seleccionar Reportes para Envío ({pendingReports.length})
+                </Text>
+                <Text style={styles.cardDesc}>
+                  Los reportes seleccionados se enviarán con su ficha clínica JSON, notas de voz y fotos adjuntas.
+                </Text>
 
-              {pendingReports.length === 0 ? (
-                <View style={styles.emptyContainer}>
-                  <Ionicons name="checkmark-circle-outline" size={36} color={theme.success} />
-                  <Text style={styles.emptyText}>No tienes reportes pendientes por sincronizar</Text>
+                {pendingReports.length === 0 ? (
+                  <View style={styles.emptyContainer}>
+                    <Ionicons name="checkmark-circle-outline" size={36} color={theme.success} />
+                    <Text style={styles.emptyText}>No tienes reportes pendientes por sincronizar</Text>
+                  </View>
+                ) : (
+                  pendingReports.map((r) => {
+                    const isSelected = selectedReportIds.has(r.reportId);
+                    return (
+                      <TouchableOpacity
+                        key={r.reportId}
+                        style={[styles.reportItem, isSelected && styles.reportItemSelected]}
+                        onPress={() => toggleReportSelection(r.reportId)}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons
+                          name={isSelected ? 'checkbox' : 'square-outline'}
+                          size={22}
+                          color={isSelected ? theme.primary : theme.textMuted}
+                        />
+                        <View style={{ flex: 1, marginLeft: 10 }}>
+                          <Text style={styles.reportSummary} numberOfLines={2}>
+                            {r.extractedSummary}
+                          </Text>
+                          <Text style={styles.reportMeta}>
+                            {r.triagePriority} • {r.status} •{' '}
+                            {new Date(r.createdAt).toLocaleTimeString('es-PA')}
+                            {r.audioUri ? ' • 🎙️ Audio' : ''}
+                            {r.imageUri ? ' • 📷 Foto' : ''}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })
+                )}
+              </View>
+            ) : (
+              <View style={styles.card}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                  <Ionicons name="shield-checkmark" size={20} color={theme.success} />
+                  <Text style={styles.cardTitle}>Modo Receptor de Brigada (Nearby)</Text>
                 </View>
-              ) : (
-                pendingReports.map((r) => {
-                  const isSelected = selectedReportIds.has(r.reportId);
-                  return (
-                    <TouchableOpacity
-                      key={r.reportId}
-                      style={[styles.reportItem, isSelected && styles.reportItemSelected]}
-                      onPress={() => toggleReportSelection(r.reportId)}
-                      activeOpacity={0.7}
-                    >
-                      <Ionicons
-                        name={isSelected ? 'checkbox' : 'square-outline'}
-                        size={22}
-                        color={isSelected ? theme.primary : theme.textMuted}
-                      />
-                      <View style={{ flex: 1, marginLeft: 10 }}>
-                        <Text style={styles.reportSummary} numberOfLines={2}>
-                          {r.extractedSummary}
-                        </Text>
-                        <Text style={styles.reportMeta}>
-                          {r.triagePriority} • {r.status} •{' '}
-                          {new Date(r.createdAt).toLocaleTimeString('es-PA')}
-                          {r.audioUri ? ' • 🎙️ Audio' : ''}
-                          {r.imageUri ? ' • 📷 Foto' : ''}
-                        </Text>
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })
-              )}
-            </View>
+                <Text style={styles.cardDesc}>
+                  Como rescatista, tu terminal opera en modo receptor. Cuando los ciudadanos en la zona se conecten a la Red Nearby, recibirás automáticamente sus reportes de emergencia, notas de voz y fotografías de triage en tu base de datos local SQLite.
+                </Text>
+              </View>
+            )}
           </>
         ) : (
           /* ==================== VISTAS ORIGINALES (WI-FI / BLUETOOTH) ==================== */
@@ -1300,14 +1498,70 @@ export default function SincronizarScreen() {
           <>
             <View style={styles.card}>
               <View style={styles.cardHeaderRow}>
-                <View>
-                  <Text style={styles.cardTitle}>📥 Modo Receptor / Servidor</Text>
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <Text style={styles.cardTitle}>
+                    {transport === 'wifi_lan' ? '📥 Receptor de Hotspot Wi-Fi' : '📥 Modo Receptor / Servidor'}
+                  </Text>
                   <Text style={styles.cardDesc}>
-                    Escuchando paquetes entrantes en {transport === 'wifi_lan' ? `Puerto ${P2P_PORT}` : 'Canal Bluetooth'}
+                    {transport === 'wifi_lan'
+                      ? isListening
+                        ? `Servidor ACTIVO en http://${localIp}:${P2P_PORT}/api/p2p/packet`
+                        : `Activa el receptor para escuchar paquetes en puerto ${P2P_PORT}`
+                      : isListening
+                      ? 'Receptor Bluetooth activo'
+                      : 'Escuchando paquetes entrantes en Canal Bluetooth'}
                   </Text>
                 </View>
                 <View style={[styles.statusDot, { backgroundColor: isListening ? theme.success : theme.danger }]} />
               </View>
+
+              {transport === 'wifi_lan' && (
+                <View
+                  style={{
+                    backgroundColor: theme.cardInner,
+                    borderRadius: 10,
+                    padding: 12,
+                    marginBottom: 12,
+                    borderWidth: 1,
+                    borderColor: isListening ? (theme.success + '40') : theme.border,
+                  }}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Ionicons name="wifi" size={16} color={theme.isDark ? '#38BDF8' : theme.primary} />
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: theme.text }}>
+                        Tu IP de Servidor en la Red
+                      </Text>
+                    </View>
+                    <View
+                      style={{
+                        backgroundColor: (isListening ? theme.success : theme.warning) + '20',
+                        paddingHorizontal: 8,
+                        paddingVertical: 2,
+                        borderRadius: 6,
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 11,
+                          fontWeight: '800',
+                          color: isListening ? theme.success : theme.warning,
+                        }}
+                      >
+                        {isListening ? 'ACTIVO' : 'EN ESPERA'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <Text style={{ fontSize: 16, fontWeight: '800', color: theme.isDark ? '#38BDF8' : theme.primary, letterSpacing: 0.5 }}>
+                    {localIp} : {P2P_PORT}
+                  </Text>
+
+                  <Text style={{ fontSize: 11, color: theme.textMuted, marginTop: 6, lineHeight: 16 }}>
+                    💡 Los ciudadanos conectados a tu Zona Wi-Fi deben apuntar a esta IP para transferir sus reportes de emergencia.
+                  </Text>
+                </View>
+              )}
 
               <TouchableOpacity
                 style={[styles.mainButton, isListening && styles.mainButtonDanger]}
@@ -1335,127 +1589,222 @@ export default function SincronizarScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* Radar de Proximidad BLE AirTag en Vivo */}
-            {isListening && transport === 'bluetooth' && (
-              <View style={[styles.card, { borderColor: theme.primary, borderWidth: 1.5 }]}>
-                <View style={styles.cardHeaderRow}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <Ionicons name="radio" size={20} color={theme.isDark ? '#38BDF8' : theme.primary} />
-                    <Text style={styles.cardTitle}>Radar BLE AirTag</Text>
-                  </View>
-                  <Text style={{ fontSize: 11, color: theme.isDark ? '#38BDF8' : theme.primary, fontWeight: '700' }}>
-                    {detectedBeacons.length > 0 ? `${detectedBeacons.length} detectadas` : 'Rastreando...'}
-                  </Text>
-                </View>
-                <Text style={styles.cardDesc}>
-                  Capturando señales de socorro emitidas al aire por ciudadanos en un radio de 20-50m.
-                </Text>
+            {/* Radar de Proximidad de Balizas Tácticas (Bluetooth / Wi-Fi) */}
+            {isListening && (transport === 'bluetooth' || transport === 'wifi_lan') && (() => {
+              const visibleBeacons = detectedBeacons.filter(
+                (b) => b.transportType === transport || (!b.transportType && transport === 'bluetooth')
+              );
 
-                {detectedBeacons.length === 0 ? (
-                  <View style={{ paddingVertical: 16, alignItems: 'center' }}>
-                    <ActivityIndicator color={theme.primary} />
-                    <Text style={{ color: theme.textMuted, fontSize: 12, marginTop: 8 }}>
-                      Esperando balizas de emergencia en el éter...
+              return (
+                <View style={[styles.card, { borderColor: theme.primary, borderWidth: 1.5 }]}>
+                  <View style={styles.cardHeaderRow}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Ionicons name="radio" size={20} color={theme.isDark ? '#38BDF8' : theme.primary} />
+                      <Text style={styles.cardTitle}>
+                        {transport === 'wifi_lan' ? 'Radar de Balizas Wi-Fi' : 'Radar BLE AirTag'}
+                      </Text>
+                    </View>
+                    <Text style={{ fontSize: 11, color: theme.isDark ? '#38BDF8' : theme.primary, fontWeight: '700' }}>
+                      {visibleBeacons.length > 0 ? `${visibleBeacons.length} detectadas` : 'Rastreando...'}
                     </Text>
                   </View>
-                ) : (
-                  detectedBeacons.map((beacon, idx) => {
-                    const isRed = beacon.priority === 'ROJO';
-                    const isYellow = beacon.priority === 'AMARILLO';
-                    const badgeBg = isRed ? '#EF4444' : isYellow ? '#F59E0B' : '#22C55E';
-                    const prox = getProximityLabel(beacon.rssi);
+                  <Text style={styles.cardDesc}>
+                    {transport === 'wifi_lan'
+                      ? 'Capturando balizas y paquetes de emergencia emitidos por ciudadanos en la red Wi-Fi.'
+                      : 'Capturando señales de socorro emitidas al aire por ciudadanos en un radio de 20-50m.'}
+                  </Text>
 
-                    return (
-                      <TouchableOpacity
-                        key={beacon.deviceAddress + idx}
-                        style={{
-                          backgroundColor: theme.cardInner,
-                          borderRadius: 10,
-                          padding: 12,
-                          marginTop: 8,
-                          borderLeftWidth: 5,
-                          borderLeftColor: badgeBg,
-                          borderWidth: 1,
-                          borderColor: theme.border,
-                        }}
-                        onPress={() => {
-                          setSelectedBeacon(beacon);
-                          setIsBeaconDetailModalOpen(true);
-                        }}
-                        activeOpacity={0.75}
-                      >
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                            <View
-                              style={{
-                                backgroundColor: badgeBg,
-                                paddingVertical: 2,
-                                paddingHorizontal: 6,
-                                borderRadius: 4,
-                              }}
-                            >
-                              <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '800' }}>
-                                {beacon.priority}
-                              </Text>
-                            </View>
-                            <Text style={{ color: theme.text, fontSize: 13, fontWeight: '700' }}>
-                              👥 {beacon.peopleCount} {beacon.peopleCount > 1 ? 'víctimas' : 'víctima'}
-                            </Text>
-                          </View>
-                          <View style={{ alignItems: 'flex-end' }}>
-                            <View
-                              style={{
-                                backgroundColor: prox.color + '25',
-                                borderColor: prox.color,
-                                borderWidth: 1,
-                                paddingVertical: 2,
-                                paddingHorizontal: 8,
-                                borderRadius: 6,
-                                marginBottom: 2,
-                              }}
-                            >
-                              <Text style={{ color: prox.color, fontSize: 11, fontWeight: '800' }}>
-                                {prox.badge}
-                              </Text>
-                            </View>
-                            <Text style={{ color: theme.textSecondary, fontSize: 10, fontWeight: '600' }}>
-                              {prox.label}
-                            </Text>
-                          </View>
-                        </View>
+                  {visibleBeacons.length === 0 ? (
+                    <View style={{ paddingVertical: 16, alignItems: 'center' }}>
+                      <ActivityIndicator color={theme.primary} />
+                      <Text style={{ color: theme.textMuted, fontSize: 12, marginTop: 8 }}>
+                        {transport === 'wifi_lan'
+                          ? 'Esperando balizas de emergencia en la red Wi-Fi...'
+                          : 'Esperando balizas de emergencia en el éter...'}
+                      </Text>
+                    </View>
+                  ) : (
+                    visibleBeacons.map((beacon, idx) => {
+                      const isRed = beacon.priority === 'ROJO';
+                      const isYellow = beacon.priority === 'AMARILLO';
+                      const badgeBg = isRed ? '#EF4444' : isYellow ? '#F59E0B' : '#22C55E';
+                      const telemetry = getTacticalAirTagTelemetry(
+                        beacon.rssi,
+                        beacon.distanceMeters,
+                        beacon.deviceAddress || beacon.reportIdShort
+                      );
 
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 }}>
-                          <Text style={{ color: theme.textMuted, fontSize: 11 }}>
-                            ID: #{beacon.reportIdShort} • {beacon.deviceName || beacon.deviceAddress.slice(0, 8)}
-                          </Text>
-                          <Text style={{ color: prox.color, fontSize: 11, fontWeight: '700' }}>
-                            Señal: {beacon.rssi} dBm ({prox.percent})
-                          </Text>
-                        </View>
-
-                        {/* Botón de acción directo para ver tarjeta de triaje */}
-                        <View
+                      return (
+                        <TouchableOpacity
+                          key={beacon.deviceAddress + idx}
                           style={{
-                            flexDirection: 'row',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            marginTop: 10,
-                            paddingTop: 8,
-                            borderTopWidth: 1,
-                            borderTopColor: theme.border,
+                            backgroundColor: theme.cardInner,
+                            borderRadius: 10,
+                            padding: 12,
+                            marginTop: 8,
+                            borderLeftWidth: 4,
+                            borderLeftColor: badgeBg,
+                            borderWidth: 1,
+                            borderColor: theme.border,
+                            overflow: 'hidden',
                           }}
+                          onPress={() => {
+                            setSelectedBeacon(beacon);
+                            setIsBeaconDetailModalOpen(true);
+                          }}
+                          activeOpacity={0.75}
                         >
-                          <Text style={{ color: theme.isDark ? '#38BDF8' : theme.primary, fontSize: 11, fontWeight: '700' }}>
-                            👉 Toca para abrir Tarjeta de Triaje y Opciones
-                          </Text>
-                          <Ionicons name="chevron-forward" size={14} color={theme.isDark ? '#38BDF8' : theme.primary} />
-                        </View>
-                      </TouchableOpacity>
-                    );
-                  })
-                )}
-              </View>
-            )}
+                          {/* Fila 1: Prioridad y Víctimas (Izquierda) vs Nivel Proximidad (Derecha) */}
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1, minWidth: 0 }}>
+                              <View
+                                style={{
+                                  backgroundColor: badgeBg,
+                                  paddingVertical: 2,
+                                  paddingHorizontal: 6,
+                                  borderRadius: 4,
+                                }}
+                              >
+                                <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '800' }}>
+                                  {beacon.priority}
+                                </Text>
+                              </View>
+                              <Text numberOfLines={1} style={{ color: theme.text, fontSize: 13, fontWeight: '700' }}>
+                                👥 {beacon.peopleCount} {beacon.peopleCount === 1 ? 'víctima' : 'víctimas'}
+                              </Text>
+                            </View>
+
+                            <View style={{ alignItems: 'flex-end', flexShrink: 0, marginLeft: 8 }}>
+                              <View
+                                style={{
+                                  backgroundColor: telemetry.color + '25',
+                                  borderColor: telemetry.color,
+                                  borderWidth: 1,
+                                  paddingVertical: 2,
+                                  paddingHorizontal: 7,
+                                  borderRadius: 6,
+                                  marginBottom: 1,
+                                }}
+                              >
+                                <Text style={{ color: telemetry.color, fontSize: 10.5, fontWeight: '800' }}>
+                                  {telemetry.badge}
+                                </Text>
+                              </View>
+                              <Text style={{ color: theme.textSecondary, fontSize: 9.5, fontWeight: '600' }}>
+                                {telemetry.label}
+                              </Text>
+                            </View>
+                          </View>
+
+                          {/* Franja Táctica AirTag: Metros aproximados y Dirección N, S, E, O */}
+                          <View
+                            style={{
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              backgroundColor: theme.isDark ? '#020617' : '#F8FAFC',
+                              borderRadius: 8,
+                              paddingVertical: 7,
+                              paddingHorizontal: 10,
+                              marginTop: 8,
+                              borderWidth: 1,
+                              borderColor: theme.border,
+                              overflow: 'hidden',
+                            }}
+                          >
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1, minWidth: 0, marginRight: 8 }}>
+                              <View
+                                style={{
+                                  width: 26,
+                                  height: 26,
+                                  borderRadius: 13,
+                                  backgroundColor: telemetry.color + '20',
+                                  borderWidth: 1.5,
+                                  borderColor: telemetry.color,
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  flexShrink: 0,
+                                }}
+                              >
+                                <Text style={{ color: telemetry.color, fontSize: 13, fontWeight: '900' }}>
+                                  {telemetry.direction.arrow}
+                                </Text>
+                              </View>
+                              <View style={{ flex: 1, minWidth: 0 }}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                  <Ionicons name="compass-outline" size={12} color={theme.isDark ? '#38BDF8' : theme.primary} />
+                                  <Text numberOfLines={1} ellipsizeMode="tail" style={{ color: theme.text, fontSize: 11.5, fontWeight: '800' }}>
+                                    Rumbo {telemetry.direction.primaryCardinal} • {telemetry.direction.label}
+                                  </Text>
+                                </View>
+                                <Text numberOfLines={1} ellipsizeMode="tail" style={{ color: theme.textMuted, fontSize: 9.5, marginTop: 1 }}>
+                                  {transport === 'wifi_lan'
+                                    ? `Orientación ${telemetry.direction.degrees}° • Wi-Fi`
+                                    : `Orientación ${telemetry.direction.degrees}° • BLE`}
+                                </Text>
+                              </View>
+                            </View>
+
+                            <View style={{ alignItems: 'flex-end', flexShrink: 0 }}>
+                              <View
+                                style={{
+                                  backgroundColor: telemetry.color + '20',
+                                  paddingHorizontal: 7,
+                                  paddingVertical: 2,
+                                  borderRadius: 6,
+                                  borderWidth: 1,
+                                  borderColor: telemetry.color,
+                                  marginBottom: 2,
+                                }}
+                              >
+                                <Text style={{ color: telemetry.color, fontSize: 11.5, fontWeight: '800' }}>
+                                  📏 {telemetry.distanceText}
+                                </Text>
+                              </View>
+                              <Text style={{ color: theme.textSecondary, fontSize: 9.5, fontWeight: '600' }}>
+                                {beacon.rssi} dBm ({telemetry.percent})
+                              </Text>
+                            </View>
+                          </View>
+
+                          {/* Fila 3: Identificador y Tipo de Baliza */}
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+                            <Text
+                              numberOfLines={1}
+                              ellipsizeMode="tail"
+                              style={{ color: theme.textMuted, fontSize: 10.5, flex: 1, marginRight: 8 }}
+                            >
+                              ID: #{beacon.reportIdShort} • {beacon.deviceName || beacon.deviceAddress.slice(0, 8)}
+                            </Text>
+                            <Text style={{ color: theme.textMuted, fontSize: 10.5, flexShrink: 0 }}>
+                              📡 {beacon.transportType === 'wifi_lan' || transport === 'wifi_lan' ? 'Baliza Wi-Fi' : 'Baliza AirTag'}
+                            </Text>
+                          </View>
+
+                          {/* Botón de acción directo para ver tarjeta de triaje */}
+                          <View
+                            style={{
+                              flexDirection: 'row',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              marginTop: 10,
+                              paddingTop: 8,
+                              borderTopWidth: 1,
+                              borderTopColor: theme.border,
+                            }}
+                          >
+                            <Text style={{ color: theme.isDark ? '#38BDF8' : theme.primary, fontSize: 11, fontWeight: '700' }}>
+                              👉 Toca para abrir Tarjeta de Triaje y Opciones
+                            </Text>
+                            <Ionicons name="chevron-forward" size={14} color={theme.isDark ? '#38BDF8' : theme.primary} />
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })
+                  )}
+                </View>
+              );
+            })()}
 
             {/* Nodos Descubiertos */}
             {nodes.length > 0 && (
@@ -1479,6 +1828,147 @@ export default function SincronizarScreen() {
         ) : (
           /* ==================== VISTA CIUDADANO ==================== */
           <>
+            {/* Panel de Configuración de Enlace Wi-Fi Hotspot para Ciudadano */}
+            {transport === 'wifi_lan' && (
+              <View style={[styles.card, { borderColor: theme.primary + '50', borderWidth: 1 }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Ionicons name="wifi" size={18} color={theme.isDark ? '#38BDF8' : theme.primary} />
+                    <Text style={styles.cardTitle}>Enlace Wi-Fi Hotspot / LAN</Text>
+                  </View>
+                  <View
+                    style={{
+                      backgroundColor: theme.primary + '20',
+                      paddingHorizontal: 8,
+                      paddingVertical: 2,
+                      borderRadius: 6,
+                    }}
+                  >
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: theme.isDark ? '#38BDF8' : theme.primary }}>
+                      Puerto {P2P_PORT}
+                    </Text>
+                  </View>
+                </View>
+
+                <Text style={styles.cardDesc}>
+                  Conéctate a la red Wi-Fi o Hotspot del Rescatista e ingresa su dirección IP para sincronizar:
+                </Text>
+
+                <Text style={{ fontSize: 12, fontWeight: '600', color: theme.text, marginBottom: 6 }}>
+                  Dirección IP del Rescatista:
+                </Text>
+
+                <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                  <TextInput
+                    style={[styles.input, { flex: 1, height: 44, paddingVertical: 8 }]}
+                    value={peerAddress}
+                    onChangeText={(t) => {
+                      setPeerAddress(t);
+                      setWifiTestResult(null);
+                    }}
+                    placeholder="192.168.43.1"
+                    placeholderTextColor={theme.textMuted}
+                    keyboardType="numeric"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+
+                  <TouchableOpacity
+                    style={{
+                      backgroundColor: theme.primary,
+                      borderRadius: 8,
+                      height: 44,
+                      paddingHorizontal: 14,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 6,
+                    }}
+                    onPress={handleTestWifiReachability}
+                    disabled={isTestingWifi}
+                    activeOpacity={0.8}
+                  >
+                    {isTestingWifi ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <Ionicons name="pulse" size={16} color="#FFFFFF" />
+                    )}
+                    <Text style={{ color: '#FFFFFF', fontSize: 13, fontWeight: '700' }}>
+                      {isTestingWifi ? 'Probando...' : 'Probar IP'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Accesos rápidos a IPs frecuentes */}
+                <View style={{ flexDirection: 'row', gap: 6, marginTop: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <Text style={{ fontSize: 11, color: theme.textMuted, marginRight: 2 }}>Accesos directos:</Text>
+                  {[
+                    { label: '43.1 (Hotspot Android)', ip: '192.168.43.1' },
+                    { label: '1.1 (Router Local)', ip: '192.168.1.1' },
+                    { label: '137.1 (Windows)', ip: '192.168.137.1' },
+                  ].map((item) => (
+                    <TouchableOpacity
+                      key={item.ip}
+                      style={{
+                        backgroundColor: peerAddress === item.ip ? (theme.primary + '25') : theme.cardInner,
+                        borderColor: peerAddress === item.ip ? theme.primary : theme.border,
+                        borderWidth: 1,
+                        paddingHorizontal: 8,
+                        paddingVertical: 4,
+                        borderRadius: 6,
+                      }}
+                      onPress={() => {
+                        setPeerAddress(item.ip);
+                        setWifiTestResult(null);
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 11,
+                          fontWeight: '600',
+                          color: peerAddress === item.ip ? (theme.isDark ? '#38BDF8' : theme.primary) : theme.textMuted,
+                        }}
+                      >
+                        {item.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {/* Resultado de prueba de conectividad */}
+                {wifiTestResult && (
+                  <View
+                    style={{
+                      backgroundColor: wifiTestResult.success ? (theme.success + '20') : (theme.danger + '20'),
+                      borderColor: wifiTestResult.success ? theme.success : theme.danger,
+                      borderWidth: 1,
+                      borderRadius: 8,
+                      padding: 10,
+                      marginTop: 10,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 8,
+                    }}
+                  >
+                    <Ionicons
+                      name={wifiTestResult.success ? 'checkmark-circle' : 'alert-circle'}
+                      size={18}
+                      color={wifiTestResult.success ? theme.success : theme.danger}
+                    />
+                    <Text
+                      style={{
+                        flex: 1,
+                        fontSize: 12,
+                        color: wifiTestResult.success ? (theme.isDark ? '#4ADE80' : '#15803D') : theme.danger,
+                        lineHeight: 16,
+                      }}
+                    >
+                      {wifiTestResult.msg}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            )}
             <View style={styles.card}>
               <Text style={styles.cardTitle}>
                 Reportes Confirmados para Envío ({pendingReports.length})
@@ -1546,6 +2036,33 @@ export default function SincronizarScreen() {
                             {syncStatusMsg || 'Transmitiendo ráfaga por radio...'}
                           </Text>
                         </View>
+                      </View>
+
+                      {/* Telemetría AirTag de Emisión Omnidireccional */}
+                      <View
+                        style={{
+                          backgroundColor: theme.isDark ? '#020617' : '#F1F5F9',
+                          borderRadius: 8,
+                          padding: 10,
+                          marginBottom: 12,
+                          borderWidth: 1,
+                          borderColor: theme.danger + '40',
+                        }}
+                      >
+                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <Ionicons name="compass" size={15} color={theme.danger} />
+                            <Text style={{ fontSize: 12, fontWeight: '800', color: theme.text }}>
+                              Cobertura Omnidireccional:
+                            </Text>
+                          </View>
+                          <Text style={{ fontSize: 11, fontWeight: '800', color: theme.danger }}>
+                            0 - 50 metros
+                          </Text>
+                        </View>
+                        <Text style={{ fontSize: 11, color: theme.textMuted, lineHeight: 16 }}>
+                          Tu baliza de emergencia ({transport === 'wifi_lan' ? 'Red Wi-Fi' : 'Bluetooth BLE'}) orienta a las brigadas hacia tu ubicación en los cuadrantes Norte, Sur, Este y Oeste.
+                        </Text>
                       </View>
 
                       {/* Botón para Cancelar Baliza */}
@@ -1748,42 +2265,112 @@ export default function SincronizarScreen() {
                   {/* Tarjeta de Radar y Proximidad en Vivo */}
                   <View style={modalStyles.card}>
                     {(() => {
-                      const mProx = getProximityLabel(selectedBeacon.rssi);
+                      const telemetry = getTacticalAirTagTelemetry(
+                        selectedBeacon.rssi,
+                        selectedBeacon.distanceMeters,
+                        selectedBeacon.deviceAddress || selectedBeacon.reportIdShort
+                      );
+                      const cardinalName =
+                        telemetry.direction.primaryCardinal === 'N'
+                          ? 'Norte'
+                          : telemetry.direction.primaryCardinal === 'S'
+                          ? 'Sur'
+                          : telemetry.direction.primaryCardinal === 'E'
+                          ? 'Este'
+                          : 'Oeste';
+
                       return (
                         <>
                           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                               <Ionicons name="radio" size={22} color={theme.isDark ? '#38BDF8' : theme.primary} />
-                              <Text style={modalStyles.cardTitle}>Proximidad de Señal</Text>
+                              <Text style={modalStyles.cardTitle}>Localización Táctica AirTag</Text>
                             </View>
                             <View
                               style={{
-                                backgroundColor: mProx.color + '25',
-                                borderColor: mProx.color,
+                                backgroundColor: telemetry.color + '25',
+                                borderColor: telemetry.color,
                                 borderWidth: 1,
                                 paddingVertical: 4,
                                 paddingHorizontal: 10,
                                 borderRadius: 6,
                               }}
                             >
-                              <Text style={{ color: mProx.color, fontSize: 13, fontWeight: '800' }}>
-                                {mProx.badge}
+                              <Text style={{ color: telemetry.color, fontSize: 13, fontWeight: '800' }}>
+                                {telemetry.badge}
+                              </Text>
+                            </View>
+                          </View>
+
+                          {/* Widget Brújula / Radar AirTag Visual */}
+                          <View
+                            style={{
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              backgroundColor: theme.isDark ? '#020617' : '#F1F5F9',
+                              borderRadius: 12,
+                              padding: 12,
+                              marginTop: 10,
+                              borderWidth: 1.5,
+                              borderColor: telemetry.color,
+                              gap: 12,
+                            }}
+                          >
+                            <View
+                              style={{
+                                width: 50,
+                                height: 50,
+                                borderRadius: 25,
+                                backgroundColor: telemetry.color + '25',
+                                borderWidth: 2,
+                                borderColor: telemetry.color,
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                              }}
+                            >
+                              <Text style={{ fontSize: 24, color: telemetry.color, fontWeight: '900' }}>
+                                {telemetry.direction.arrow}
+                              </Text>
+                            </View>
+                            <View style={{ flex: 1 }}>
+                              <Text style={{ color: theme.text, fontSize: 16, fontWeight: '900' }}>
+                                📏 {telemetry.distanceText}
+                              </Text>
+                              <Text style={{ color: telemetry.color, fontSize: 13, fontWeight: '800', marginTop: 2 }}>
+                                🧭 Rumbo {telemetry.direction.primaryCardinal} • {telemetry.direction.label}
+                              </Text>
+                              <Text style={{ color: theme.textMuted, fontSize: 11, marginTop: 2 }}>
+                                Orientación {telemetry.direction.degrees}° respecto a tu posición
                               </Text>
                             </View>
                           </View>
 
                           <View style={{ marginTop: 10, gap: 6 }}>
                             <View style={modalStyles.infoRow}>
+                              <Text style={modalStyles.infoLabel}>Distancia calculada:</Text>
+                              <Text style={[modalStyles.infoValue, { color: telemetry.color, fontWeight: '800' }]}>
+                                {telemetry.distanceText} (Margen ±0.5m por atenuación)
+                              </Text>
+                            </View>
+
+                            <View style={modalStyles.infoRow}>
+                              <Text style={modalStyles.infoLabel}>Dirección Cardinal:</Text>
+                              <Text style={[modalStyles.infoValue, { fontWeight: '800', color: theme.text }]}>
+                                {telemetry.direction.primaryCardinal} ({cardinalName}) • {telemetry.direction.degrees}°
+                              </Text>
+                            </View>
+
+                            <View style={modalStyles.infoRow}>
                               <Text style={modalStyles.infoLabel}>Rango táctico:</Text>
-                              <Text style={[modalStyles.infoValue, { color: mProx.color, fontWeight: '700' }]}>
-                                {mProx.label}
+                              <Text style={[modalStyles.infoValue, { color: telemetry.color, fontWeight: '700' }]}>
+                                {telemetry.label}
                               </Text>
                             </View>
 
                             <View style={modalStyles.infoRow}>
                               <Text style={modalStyles.infoLabel}>Potencia de antena (RSSI):</Text>
                               <Text style={modalStyles.infoValue}>
-                                {selectedBeacon.rssi} dBm (Intensidad {mProx.percent})
+                                {selectedBeacon.rssi} dBm (Intensidad {telemetry.percent})
                               </Text>
                             </View>
                           </View>
@@ -1952,15 +2539,17 @@ const createStyles = (theme: ThemeColors) =>
     },
     statBox: {
       flex: 1,
+      minWidth: 0,
       backgroundColor: theme.card,
       borderRadius: 12,
-      padding: 12,
+      padding: 10,
       alignItems: 'center',
       borderWidth: 1,
       borderColor: theme.border,
+      overflow: 'hidden',
     },
-    statNum: { fontSize: 18, fontWeight: '800', color: theme.text, marginTop: 4 },
-    statLabel: { fontSize: 11, color: theme.textMuted, marginTop: 2 },
+    statNum: { fontSize: 16, fontWeight: '800', color: theme.text, marginTop: 4 },
+    statLabel: { fontSize: 10.5, color: theme.textMuted, marginTop: 2 },
     card: {
       backgroundColor: theme.card,
       borderRadius: 12,

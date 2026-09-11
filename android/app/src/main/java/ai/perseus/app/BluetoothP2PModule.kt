@@ -15,6 +15,8 @@ import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.os.ParcelUuid
+import android.content.Context
+import android.net.wifi.WifiManager
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
@@ -321,7 +323,10 @@ class BluetoothP2PModule(private val reactContext: ReactApplicationContext) :
 
         try {
             val listenPort = if (port.toInt() in 1024..65535) port.toInt() else 7890
-            httpServer = java.net.ServerSocket(listenPort)
+            val server = java.net.ServerSocket()
+            server.reuseAddress = true
+            server.bind(java.net.InetSocketAddress(listenPort))
+            httpServer = server
             isHttpServerRunning = true
 
             httpServerThread = Thread {
@@ -354,39 +359,88 @@ class BluetoothP2PModule(private val reactContext: ReactApplicationContext) :
     private fun handleHttpClient(socket: java.net.Socket) {
         Thread {
             try {
-                socket.soTimeout = 12000
-                val reader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8))
-                val out = PrintWriter(OutputStreamWriter(socket.getOutputStream(), Charsets.UTF_8))
+                socket.soTimeout = 10000
+                val inStream = java.io.BufferedInputStream(socket.getInputStream())
+                val out = java.io.BufferedOutputStream(socket.getOutputStream())
 
                 var contentLength = 0
-                var line: String?
+                var method = "POST"
+                var isFirstLine = true
 
-                // 1. Leer cabeceras HTTP
-                while (reader.readLine().also { line = it } != null) {
-                    if (line.isNullOrEmpty()) break
-                    val lower = line!!.lowercase()
-                    if (lower.startsWith("content-length:")) {
-                        contentLength = lower.substringAfter("content-length:").trim().toIntOrNull() ?: 0
+                val headerLine = ByteArrayOutputStream()
+                while (true) {
+                    val b = inStream.read()
+                    if (b == -1) break
+                    if (b == '\n'.code) {
+                        val line = headerLine.toString("UTF-8").trim()
+                        headerLine.reset()
+                        if (line.isEmpty()) {
+                            break
+                        }
+                        if (isFirstLine) {
+                            method = line.split(" ").firstOrNull()?.uppercase() ?: "POST"
+                            isFirstLine = false
+                        }
+                        val lower = line.lowercase()
+                        if (lower.startsWith("content-length:")) {
+                            contentLength = lower.substringAfter("content-length:").trim().toIntOrNull() ?: 0
+                        }
+                    } else if (b != '\r'.code) {
+                        headerLine.write(b)
                     }
                 }
 
-                // 2. Leer cuerpo de la petición (JSON)
-                val body = if (contentLength > 0) {
-                    val buffer = CharArray(contentLength)
+                // Manejo de preflight CORS (OPTIONS)
+                if (method == "OPTIONS") {
+                    val corsResp = "HTTP/1.1 204 No Content\r\n" +
+                            "Access-Control-Allow-Origin: *\r\n" +
+                            "Access-Control-Allow-Methods: POST, GET, OPTIONS\r\n" +
+                            "Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, X-Perseus-Version\r\n" +
+                            "Connection: close\r\n\r\n"
+                    out.write(corsResp.toByteArray(Charsets.UTF_8))
+                    out.flush()
+                    return@Thread
+                }
+
+                // Manejo de GET (diagnóstico desde navegador o ping)
+                if (method == "GET") {
+                    val getBody = """{"status":"online","service":"Perseus.ai P2P Server","port":7890,"timestamp":${System.currentTimeMillis()}}"""
+                    val getBytes = getBody.toByteArray(Charsets.UTF_8)
+                    val getResp = "HTTP/1.1 200 OK\r\n" +
+                            "Content-Type: application/json; charset=utf-8\r\n" +
+                            "Content-Length: ${getBytes.size}\r\n" +
+                            "Access-Control-Allow-Origin: *\r\n" +
+                            "Connection: close\r\n\r\n"
+                    out.write(getResp.toByteArray(Charsets.UTF_8))
+                    out.write(getBytes)
+                    out.flush()
+                    return@Thread
+                }
+
+                // 2. Leer cuerpo de la petición (JSON) EXACTAMENTE en bytes (evita bug de UTF-8 con tildes)
+                val bodyBytes = if (contentLength > 0) {
+                    val buf = ByteArray(contentLength)
                     var readTotal = 0
                     while (readTotal < contentLength) {
-                        val read = reader.read(buffer, readTotal, contentLength - readTotal)
+                        val read = inStream.read(buf, readTotal, contentLength - readTotal)
                         if (read == -1) break
                         readTotal += read
                     }
-                    String(buffer, 0, readTotal)
+                    if (readTotal == contentLength) buf else buf.copyOf(readTotal)
                 } else {
-                    val sb = StringBuilder()
-                    while (reader.ready() && reader.readLine().also { line = it } != null) {
-                        sb.append(line).append("\n")
+                    val bodyStream = ByteArrayOutputStream()
+                    val temp = ByteArray(2048)
+                    var count = 0
+                    while (inStream.available() > 0 && count < 1048576) {
+                        val read = inStream.read(temp)
+                        if (read == -1) break
+                        bodyStream.write(temp, 0, read)
+                        count += read
                     }
-                    sb.toString().trim()
+                    bodyStream.toByteArray()
                 }
+
+                val body = String(bodyBytes, Charsets.UTF_8).trim()
 
                 if (body.isNotEmpty()) {
                     val clientIp = socket.inetAddress?.hostAddress ?: "192.168.43.x"
@@ -404,15 +458,18 @@ class BluetoothP2PModule(private val reactContext: ReactApplicationContext) :
                     val ackBody = """{"success":true,"type":"ACK","status":"delivered_via_wifi","ackPacketId":"$inResponseTo","timestamp":${System.currentTimeMillis()},"receiverName":"${bluetoothAdapter?.name ?: "Rescatista"}"}"""
                     val ackBytes = ackBody.toByteArray(Charsets.UTF_8)
 
-                    out.print("HTTP/1.1 200 OK\r\n")
-                    out.print("Content-Type: application/json; charset=utf-8\r\n")
-                    out.print("Content-Length: ${ackBytes.size}\r\n")
-                    out.print("Connection: close\r\n")
-                    out.print("\r\n")
-                    out.print(ackBody)
+                    val responseHeaders = "HTTP/1.1 200 OK\r\n" +
+                            "Content-Type: application/json; charset=utf-8\r\n" +
+                            "Content-Length: ${ackBytes.size}\r\n" +
+                            "Access-Control-Allow-Origin: *\r\n" +
+                            "Connection: close\r\n\r\n"
+
+                    out.write(responseHeaders.toByteArray(Charsets.UTF_8))
+                    out.write(ackBytes)
                     out.flush()
                 } else {
-                    out.print("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n")
+                    val badReq = "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                    out.write(badReq.toByteArray(Charsets.UTF_8))
                     out.flush()
                 }
             } catch (e: Exception) {
@@ -436,6 +493,60 @@ class BluetoothP2PModule(private val reactContext: ReactApplicationContext) :
             promise.resolve(true)
         } catch (e: Exception) {
             promise.reject("ERR_STOP_HTTP", e.message, e)
+        }
+    }
+
+    @ReactMethod
+    fun getLocalIpAddress(promise: Promise) {
+        try {
+            val interfaces = java.net.NetworkInterface.getNetworkInterfaces()
+            var fallbackIp = "192.168.43.1"
+            var hotspotIp: String? = null
+            var wifiIp: String? = null
+
+            for (itf in interfaces) {
+                if (itf.isLoopback || !itf.isUp) continue
+                val addresses = itf.inetAddresses
+                for (addr in addresses) {
+                    if (!addr.isLoopbackAddress && addr is java.net.Inet4Address) {
+                        val ip = addr.hostAddress ?: continue
+                        val name = itf.name.lowercase()
+                        if (name.contains("ap") || name.contains("softap") || name.contains("swlan") || name.contains("tether")) {
+                            hotspotIp = ip
+                        } else if (name.contains("wlan") || name.contains("rndis")) {
+                            if (wifiIp == null) wifiIp = ip
+                        }
+                    }
+                }
+            }
+
+            promise.resolve(hotspotIp ?: wifiIp ?: fallbackIp)
+        } catch (e: Exception) {
+            promise.resolve("192.168.43.1")
+        }
+    }
+
+    @ReactMethod
+    fun getGatewayIpAddress(promise: Promise) {
+        try {
+            val wifiManager = reactContext.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+            val dhcpInfo = wifiManager?.dhcpInfo
+            if (dhcpInfo != null && dhcpInfo.gateway != 0) {
+                val ipInt = dhcpInfo.gateway
+                val ip = String.format(
+                    java.util.Locale.US,
+                    "%d.%d.%d.%d",
+                    ipInt and 0xff,
+                    ipInt shr 8 and 0xff,
+                    ipInt shr 16 and 0xff,
+                    ipInt shr 24 and 0xff
+                )
+                promise.resolve(ip)
+                return
+            }
+            promise.resolve("192.168.43.1")
+        } catch (e: Exception) {
+            promise.resolve("192.168.43.1")
         }
     }
 

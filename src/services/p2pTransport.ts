@@ -129,11 +129,12 @@ export async function sendPacketViaWifi(
   peerIp: string,
   packet: P2PPacket,
   port: number = DEFAULT_P2P_PORT,
-  timeoutMs: number = DEFAULT_TIMEOUT_MS
+  timeoutMs: number = 8000
 ): Promise<{ success: boolean; response?: any; error?: string; bytes: number }> {
   const jsonBody = JSON.stringify(packet);
   const bytes = new TextEncoder().encode(jsonBody).length;
-  const endpoint = `http://${peerIp.trim()}:${port}/api/p2p/packet`;
+  const cleanIp = peerIp.replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/:\d+$/, '').trim() || '192.168.43.1';
+  const endpoint = `http://${cleanIp}:${port}/api/p2p/packet`;
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -142,8 +143,8 @@ export async function sendPacketViaWifi(
     const res = await fetch(endpoint, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'X-Perseus-Version': '1.0',
+        'Content-Type': 'application/json; charset=utf-8',
+        'Content-Length': String(bytes),
       },
       body: jsonBody,
       signal: controller.signal,
@@ -172,6 +173,54 @@ export async function sendPacketViaWifi(
       success: false,
       error: isTimeout ? `Tiempo de espera agotado (${timeoutMs}ms)` : (err.message || 'Error de conexión Wi-Fi'),
       bytes,
+    };
+  }
+}
+
+/**
+ * Verifica si el servidor HTTP del rescatista está activo y transmite un paquete de prueba handshake
+ */
+export async function testWifiPeerReachability(
+  peerIp: string,
+  port: number = DEFAULT_P2P_PORT,
+  timeoutMs: number = 5000,
+  senderCallsign?: string
+): Promise<{ reachable: boolean; latencyMs?: number; error?: string }> {
+  const cleanIp = peerIp.replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/:\d+$/, '').trim() || '192.168.43.1';
+  const endpoint = `http://${cleanIp}:${port}/api/p2p/packet`;
+  const startTime = Date.now();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  const testPacket = createPacket('HANDSHAKE', {
+    id: 'test-ping',
+    callsign: senderCallsign || 'Ciudadano (Prueba IP)',
+  }, {
+    message: 'Prueba de enlace Wi-Fi',
+    pingAt: startTime,
+  });
+
+  const bodyStr = JSON.stringify(testPacket);
+  const bodyBytes = new TextEncoder().encode(bodyStr).length;
+
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Content-Length': String(bodyBytes),
+      },
+      body: bodyStr,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    const latencyMs = Date.now() - startTime;
+    return { reachable: res.ok || res.status < 500, latencyMs };
+  } catch (err: any) {
+    clearTimeout(timeoutId);
+    return {
+      reachable: false,
+      error: err.name === 'AbortError' ? `Tiempo de espera agotado (${timeoutMs}ms)` : (err.message || 'No se pudo conectar'),
     };
   }
 }
@@ -302,7 +351,7 @@ export async function sendPacketViaBluetooth(
 }
 
 // Constantes de Duty Cycling para ahorro de batería y anticolisión
-export const BEACON_BURST_TIMEOUT_MS = 2500; // Intento activo de conexión
+export const BEACON_BURST_TIMEOUT_MS = 6000; // Intento activo de conexión (aumentado a 6s para estabilidad Wi-Fi)
 export const BEACON_SLEEP_MS = 3500; // Reposo para ahorrar batería (~70% ahorro)
 export const JITTER_MIN_MS = 400; // Retraso aleatorio mínimo anti-colisión
 export const JITTER_MAX_MS = 1200; // Retraso aleatorio máximo anti-colisión
