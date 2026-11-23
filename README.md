@@ -113,36 +113,45 @@ Perseus.ai alinea su lógica de decisión con los protocolos internacionales má
 
 ## 8. Guía de Evaluación Rápida para Jurados (3 Minutos)
 
-Para evaluar **Perseus.ai** en el dispositivo Android físico durante la demostración:
+> [!IMPORTANT]
+> **Configuración Recomendada de Prueba: 2 Dispositivos Android**  
+> Para experimentar la sincronización mallada P2P en tiempo real sin internet ni cables, se recomienda instalar la APK en **dos teléfonos Android**:
+> - **Dispositivo A (Rol: Ciudadano):** Genera el reporte de emergencia multimodal con IA on-device en Modo Avión.
+> - **Dispositivo B (Rol: Rescatista):** Recibe la ficha de triaje, la foto y el audio directamente por el aire mediante Nearby Connections (BLE + Wi-Fi Direct), y visualiza el caso priorizado en su consola táctica.
+> 
+> *(Si solo dispone de un dispositivo para la evaluación, puede alternar fácilmente entre ambos roles desde la pestaña **Perfil**).*
 
-### Paso 1: Configurar Rol e Identidad
-1. Al abrir la app por primera vez, complete el formulario de bienvenida (o edite su perfil en la pestaña **Perfil**).
-2. Seleccione el rol deseado:
-   * **Ciudadano:** Interfaz simplificada para solicitar auxilio, grabar reportes y recibir instrucciones de seguridad.
-   * **Rescatista:** Interfaz táctica con métricas START, lista de casos y toma de asignaciones.
+### Paso 1: Configurar Roles e Identidades
+1. **En el Dispositivo A:** Complete el perfil y seleccione el rol **"Ciudadano"** (interfaz simplificada para auxilio).
+2. **En el Dispositivo B:** Complete el perfil y seleccione el rol **"Rescatista"** (interfaz táctica con métricas y colas de atención START).
 
-### Paso 2: Crear un Reporte de Emergencia Multimodal
-1. Diríjase a la pestaña **Reportar** (`+`).
-2. Puede utilizar los tres métodos de entrada:
+### Paso 2: Crear el Reporte en el Dispositivo A (Ciudadano)
+1. En el **Dispositivo A**, diríjase a la pestaña **Reportar** (`+`).
+2. Puede activar el **Modo Avión** para verificar la inferencia 100% local.
+3. Utilice las opciones de captura multimodal:
    * **Voz:** Presione `🎙️ Grabar Audio` y dicte una situación de desastre (ej: *"Tenemos tres personas atrapadas por la crecida del río en Tierras Altas, una con fractura"*).
    * **Foto:** Capture una fotografía o seleccione una imagen de la galería.
    * **Relato escrito:** Escriba o complemente el relato del incidente.
-3. Presione **"🔍 Procesar con IA"**.
-4. Observe las fases del pipeline ejecutándose en pantalla: transcripción $\rightarrow$ análisis visual $\rightarrow$ extracción semántica.
-5. Verifique la pantalla de **Revisión Humana**: el sistema muestra la ficha estructurada, la prioridad START calculada, las necesidades Esfera detectadas y los detalles técnicos de la auditoría.
-6. Presione **"Confirmar y Guardar"**.
+4. Presione **"🔍 Procesar con IA"**.
+5. Observe las fases del pipeline ejecutándose en pantalla: transcripción $\rightarrow$ análisis visual $\rightarrow$ extracción semántica con Llama 3.2.
+6. En la pantalla de **Revisión Humana**, verifique la ficha clasificada con prioridad START (Rojo/Amarillo) y necesidades Esfera.
+7. Presione **"Confirmar y Compartir"** (o "Confirmar y Guardar").
 
-### Paso 3: Probar la Sincronización P2P
-1. Vaya a la pestaña **Sincronizar** (o presione "Confirmar y Compartir").
-2. Active el interruptor de **Sincronización P2P**. El dispositivo comenzará a descubrir otros teléfonos cercanos en modo cluster.
-3. En la pestaña **Perfil**, verifique la bitácora de auditoría de red (`SYNC_LOG`) con los bytes y eventos de sincronización registrados.
+### Paso 3: Sincronización P2P en el Aire (De Dispositivo A a Dispositivo B)
+1. En ambos teléfonos, diríjase a la pestaña **P2P** (Sincronizar).
+2. Active el interruptor de **Sincronización P2P** en ambos dispositivos.
+3. Observe cómo los dispositivos se descubren automáticamente mediante el cluster de Nearby Connections:
+   * El **Dispositivo A** transmite el reporte estructurado JSON junto con la foto y el audio.
+   * El **Dispositivo B (Rescatista)** recibe el reporte en tiempo real sin requerir routers ni conexión a internet.
+4. En el **Dispositivo B (Rescatista)**, vaya a la pestaña **Inicio**: el nuevo caso aparecerá inmediatamente en la **Cola de Atención** ordenado por prioridad START, listo para que el rescatista presione **"Tomar Caso"**.
+5. En la pestaña **P2P**, utilice el **Radar de Proximidad RSSI** para comprobar la distancia relativa estimada entre ambos teléfonos.
 
-### Paso 4: Inspeccionar Laboratorios de Diagnóstico
-1. Vaya a la pestaña **Perfil**.
-2. Desplácese hasta la sección final: **"🔬 Diagnóstico y Modelos de IA"**.
-3. Ingrese a los laboratorios interactivos:
+### Paso 4: Inspeccionar Laboratorios de Diagnóstico y Auditoría
+1. En cualquiera de los teléfonos, vaya a la pestaña **Perfil**.
+2. Desplácese hasta la sección final: **"🔬 Diagnóstico y Modelos de IA"**:
    * **Laboratorio Whisper ASR:** Permite grabar notas de voz y probar la transcripción local con métricas de tiempo de inferencia.
    * **Laboratorio de Visión:** Permite seleccionar presets de emergencias (inundación, derrumbe, daño estructural) y probar la inspección visual on-device.
+3. En la tarjeta **"Bitácora de Sincronización P2P"**, audite los paquetes transferidos, los bytes transmitidos y los acuses de recibo (ACK).
 
 ---
 
